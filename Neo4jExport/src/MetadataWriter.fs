@@ -13,6 +13,7 @@ module MetadataWriter =
         (metadata: FullMetadata)
         (targetSize: int)
         (writerOptions: JsonWriterOptions)
+        (lineState: LineTrackingState)
         : Result<unit, string> =
 
         use memoryStream = new MemoryStream()
@@ -22,32 +23,157 @@ module MetadataWriter =
 
         writer.WriteStartObject()
 
+        // Write format_version at root level
+        writer.WriteString("format_version", metadata.FormatVersion)
+
+        // Export metadata
         writer.WritePropertyName("export_metadata")
-        JsonSerializer.Serialize(writer, metadata.ExportMetadata)
+        writer.WriteStartObject()
+        writer.WriteString("export_id", metadata.ExportMetadata.ExportId.ToString())
+        writer.WriteString("export_timestamp_utc", metadata.ExportMetadata.ExportTimestampUtc.ToString("O"))
+        writer.WriteString("export_mode", metadata.ExportMetadata.ExportMode)
 
+        // Format info
+        match metadata.ExportMetadata.Format with
+        | Some format ->
+            writer.WritePropertyName("format")
+            writer.WriteStartObject()
+            writer.WriteString("type", format.Type)
+            writer.WriteNumber("metadata_line", format.MetadataLine)
+
+            // Dynamically write all record type start lines
+            for KeyValue(recordType, startLine) in lineState.RecordTypeStartLines do
+                writer.WriteNumber(sprintf "%s_start_line" recordType, startLine)
+
+            writer.WriteEndObject()
+        | None -> ()
+
+        writer.WriteEndObject()
+
+        // Producer (renamed from export_script)
+        writer.WritePropertyName("producer")
+        JsonSerializer.Serialize(writer, metadata.Producer)
+
+        // Source system
         writer.WritePropertyName("source_system")
-        JsonSerializer.Serialize(writer, metadata.SourceSystem)
+        writer.WriteStartObject()
+        writer.WriteString("type", metadata.SourceSystem.Type)
+        writer.WriteString("version", metadata.SourceSystem.Version)
+        writer.WriteString("edition", metadata.SourceSystem.Edition)
 
+        // Database
+        writer.WritePropertyName("database")
+        writer.WriteStartObject()
+        writer.WriteString("name", metadata.SourceSystem.Database.Name)
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+
+        // Error summary
+        match metadata.ErrorSummary with
+        | Some errorSummary ->
+            writer.WritePropertyName("error_summary")
+            writer.WriteStartObject()
+            writer.WriteNumber("error_count", errorSummary.ErrorCount)
+            writer.WriteNumber("warning_count", errorSummary.WarningCount)
+            writer.WriteBoolean("has_errors", errorSummary.HasErrors)
+            writer.WriteEndObject()
+        | None -> ()
+
+        // Database statistics
         writer.WritePropertyName("database_statistics")
         JsonHelpers.writeJsonValue writer (JObject metadata.DatabaseStatistics)
 
-        writer.WritePropertyName("database_schema")
-        JsonHelpers.writeJsonValue writer (JObject metadata.DatabaseSchema)
+        // Record types
+        writer.WritePropertyName("supported_record_types")
+        writer.WriteStartArray()
 
+        for recordType in metadata.RecordTypes do
+            writer.WriteStartObject()
+            writer.WriteString("type_name", recordType.TypeName)
+            writer.WriteString("description", recordType.Description)
+            writer.WritePropertyName("required_fields")
+            writer.WriteStartArray()
+
+            for field in recordType.RequiredFields do
+                writer.WriteStringValue(field)
+
+            writer.WriteEndArray()
+
+            match recordType.OptionalFields with
+            | Some fields ->
+                writer.WritePropertyName("optional_fields")
+                writer.WriteStartArray()
+
+                for field in fields do
+                    writer.WriteStringValue(field)
+
+                writer.WriteEndArray()
+            | None -> ()
+
+            writer.WriteEndObject()
+
+        writer.WriteEndArray()
+
+        // Environment
         writer.WritePropertyName("environment")
         JsonSerializer.Serialize(writer, metadata.Environment)
 
+        // Security
         writer.WritePropertyName("security")
         JsonSerializer.Serialize(writer, metadata.Security)
 
+        // Compatibility
+        writer.WritePropertyName("compatibility")
+        writer.WriteStartObject()
+        writer.WriteString("minimum_reader_version", metadata.Compatibility.MinimumReaderVersion)
+        writer.WritePropertyName("deprecated_fields")
+        writer.WriteStartArray()
+
+        for field in metadata.Compatibility.DeprecatedFields do
+            writer.WriteStringValue(field)
+
+        writer.WriteEndArray()
+        writer.WriteString("breaking_change_version", metadata.Compatibility.BreakingChangeVersion)
+        writer.WriteEndObject()
+
+        // Compression hints
+        writer.WritePropertyName("compression")
+        writer.WriteStartObject()
+        writer.WriteString("recommended", metadata.Compression.Recommended)
+        writer.WritePropertyName("compatible")
+        writer.WriteStartArray()
+
+        for format in metadata.Compression.Compatible do
+            writer.WriteStringValue(format)
+
+        writer.WriteEndArray()
+
+        // Always write expected_ratio (null if None)
+        writer.WritePropertyName("expected_ratio")
+
+        match metadata.Compression.ExpectedRatio with
+        | Some ratio -> writer.WriteNumberValue(ratio)
+        | None -> writer.WriteNullValue()
+
+        writer.WriteString("suffix", metadata.Compression.Suffix)
+        writer.WriteEndObject()
+
+        // Database schema
+        writer.WritePropertyName("database_schema")
+        JsonHelpers.writeJsonValue writer (JObject metadata.DatabaseSchema)
+
+        // Export manifest
         writer.WritePropertyName("export_manifest")
         JsonSerializer.Serialize(writer, metadata.ExportManifest)
 
-        writer.WritePropertyName("_reserved")
-        writer.WriteStartObject()
-        writer.WriteString("purpose", "JSONL streaming compatibility - enables single-pass export")
-        writer.WriteString("version", "1.0")
-        writer.WriteEndObject()
+        // Update _reserved without version
+        match metadata.Reserved with
+        | Some reserved ->
+            writer.WritePropertyName("_reserved")
+            writer.WriteStartObject()
+            writer.WriteString("purpose", reserved.Purpose)
+            writer.WriteEndObject()
+        | None -> ()
 
         writer.WriteEndObject()
         writer.Flush()

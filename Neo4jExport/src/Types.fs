@@ -106,23 +106,25 @@ type ExportScriptMetadata =
       [<JsonPropertyName("runtime_version")>]
       RuntimeVersion: string }
 
+type FormatInfo =
+    { [<JsonPropertyName("type")>]
+      Type: string
+      [<JsonPropertyName("metadata_line")>]
+      MetadataLine: int }
+
 type ExportMetadata =
     { [<JsonPropertyName("export_id")>]
       ExportId: Guid
       [<JsonPropertyName("export_timestamp_utc")>]
       ExportTimestampUtc: DateTime
-      [<JsonPropertyName("export_script")>]
-      ExportScript: ExportScriptMetadata
       [<JsonPropertyName("export_mode")>]
-      ExportMode: string }
+      ExportMode: string
+      [<JsonPropertyName("format")>]
+      Format: FormatInfo option }
 
 type DatabaseMetadata =
     { [<JsonPropertyName("name")>]
-      Name: string
-      [<JsonPropertyName("creation_date")>]
-      CreationDate: DateTime option
-      [<JsonPropertyName("size_bytes")>]
-      SizeBytes: int64 option }
+      Name: string }
 
 type SourceSystemMetadata =
     { [<JsonPropertyName("type")>]
@@ -172,6 +174,15 @@ type ExportManifestDetails =
       [<JsonPropertyName("file_statistics")>]
       FileStatistics: FileLevelStatistics list }
 
+/// Error summary for the export
+type ErrorSummary =
+    { [<JsonPropertyName("error_count")>]
+      ErrorCount: int64
+      [<JsonPropertyName("warning_count")>]
+      WarningCount: int64
+      [<JsonPropertyName("has_errors")>]
+      HasErrors: bool }
+
 /// Type-safe representation of JSON values
 type JsonValue =
     | JString of string
@@ -181,9 +192,121 @@ type JsonValue =
     | JObject of IDictionary<string, JsonValue>
     | JArray of JsonValue list
 
+/// Reserved metadata for future use
+type ReservedMetadata =
+    { Purpose: string
+      Padding: string option }
+
+/// Defines a record type that can appear in the JSONL file
+type RecordTypeDefinition =
+    { [<JsonPropertyName("type_name")>]
+      TypeName: string
+      [<JsonPropertyName("description")>]
+      Description: string
+      [<JsonPropertyName("required_fields")>]
+      RequiredFields: string list
+      [<JsonPropertyName("optional_fields")>]
+      OptionalFields: string list option }
+
+/// Compression hints for the exported file
+type CompressionHints =
+    { [<JsonPropertyName("recommended")>]
+      Recommended: string
+      [<JsonPropertyName("compatible")>]
+      Compatible: string list
+      [<JsonPropertyName("expected_ratio")>]
+      ExpectedRatio: float option
+      [<JsonPropertyName("suffix")>]
+      Suffix: string }
+
+/// Backward compatibility information
+type CompatibilityInfo =
+    { [<JsonPropertyName("minimum_reader_version")>]
+      MinimumReaderVersion: string
+      [<JsonPropertyName("deprecated_fields")>]
+      DeprecatedFields: string list
+      [<JsonPropertyName("breaking_change_version")>]
+      BreakingChangeVersion: string }
+
+/// Error record for tracking export issues
+type ErrorRecord =
+    { [<JsonPropertyName("type")>]
+      Type: string // "error" or "warning"
+      [<JsonPropertyName("timestamp")>]
+      Timestamp: DateTime
+      [<JsonPropertyName("line")>]
+      Line: int64 option
+      [<JsonPropertyName("message")>]
+      Message: string
+      [<JsonPropertyName("details")>]
+      Details: IDictionary<string, JsonValue> option
+      [<JsonPropertyName("node_id")>]
+      NodeId: int64 option
+      [<JsonPropertyName("relationship_id")>]
+      RelationshipId: int64 option }
+
+/// Immutable state for tracking line numbers functionally
+type LineTrackingState =
+    { CurrentLine: int64
+      RecordTypeStartLines: Map<string, int64> }
+
+/// Helper module for functional line tracking
+module LineTracking =
+    let create () =
+        { CurrentLine = 2L
+          RecordTypeStartLines = Map.empty }
+
+    let incrementLine state =
+        { state with
+            CurrentLine = state.CurrentLine + 1L }
+
+    let recordTypeStart (recordType: string) (state: LineTrackingState) =
+        if state.RecordTypeStartLines.ContainsKey(recordType) then
+            state
+        else
+            { state with
+                RecordTypeStartLines = state.RecordTypeStartLines.Add(recordType, state.CurrentLine) }
+
+/// Immutable state for error tracking with agent pattern
+type ErrorTrackingState =
+    { Errors: ErrorRecord list
+      ErrorCount: int64
+      WarningCount: int64
+      CurrentLine: int64 }
+
+/// Messages for error tracking agent
+type ErrorTrackingMessage =
+    | AddError of
+        message: string *
+        nodeId: int64 option *
+        relId: int64 option *
+        details: IDictionary<string, JsonValue> option *
+        AsyncReplyChannel<unit>
+    | AddWarning of
+        message: string *
+        nodeId: int64 option *
+        relId: int64 option *
+        details: IDictionary<string, JsonValue> option *
+        AsyncReplyChannel<unit>
+    | IncrementLine of AsyncReplyChannel<unit>
+    | GetState of AsyncReplyChannel<ErrorTrackingState>
+
+/// Messages for resource monitoring agent
+type MonitoringMessage =
+    | CheckResources of AsyncReplyChannel<Result<unit, string>>
+    | Stop
+
+/// State for resource monitoring
+type ResourceState =
+    { LastCheck: DateTime; IsRunning: bool }
+
 type FullMetadata =
-    { [<JsonPropertyName("export_metadata")>]
+    { [<JsonPropertyName("format_version")>]
+      FormatVersion: string // Move to root level
+      [<JsonPropertyName("export_metadata")>]
       ExportMetadata: ExportMetadata
+      [<JsonPropertyName("producer")>] // Rename from export_script
+      Producer: ExportScriptMetadata
       [<JsonPropertyName("source_system")>]
       SourceSystem: SourceSystemMetadata
       [<JsonPropertyName("database_statistics")>]
@@ -195,14 +318,14 @@ type FullMetadata =
       [<JsonPropertyName("security")>]
       Security: SecurityMetadata
       [<JsonPropertyName("export_manifest")>]
-      ExportManifest: ExportManifestDetails option }
-
-type ReservedMetadata =
-    { Purpose: string
-      Version: string
-      Padding: string option }
-
-type MetadataSerializationResult =
-    | ExactFit of bytes: byte[]
-    | NeedsPadding of baseBytes: byte[] * bytesNeeded: int
-    | TooLarge of actualSize: int * maxSize: int
+      ExportManifest: ExportManifestDetails option
+      [<JsonPropertyName("error_summary")>]
+      ErrorSummary: ErrorSummary option
+      [<JsonPropertyName("supported_record_types")>]
+      RecordTypes: RecordTypeDefinition list
+      [<JsonPropertyName("compatibility")>]
+      Compatibility: CompatibilityInfo
+      [<JsonPropertyName("compression")>]
+      Compression: CompressionHints
+      [<JsonPropertyName("_reserved")>]
+      Reserved: ReservedMetadata option }

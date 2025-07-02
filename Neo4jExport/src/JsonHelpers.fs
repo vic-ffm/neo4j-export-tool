@@ -74,40 +74,22 @@ module JsonHelpers =
         | Ok value -> value
         | Error msg -> failwith (sprintf "JSON conversion error: %s" msg)
 
-    /// Extract string value from JsonValue - strict version
-    let tryGetString (value: JsonValue) : string option =
+    /// Extract string value from JsonValue - Result version
+    let tryGetString (value: JsonValue) : Result<string, string> =
         match value with
-        | JString s -> Some s
-        | _ -> None
+        | JString s -> Ok s
+        | _ -> Error "Value is not a string"
 
-    /// Convert any JsonValue to string representation - explicit coercion
-    let asString (value: JsonValue) : string =
-        match value with
-        | JString s -> s
-        | JNumber n -> n.ToString()
-        | JBool b -> if b then "true" else "false"
-        | JNull -> ""
-        | JObject _ -> "{...}"
-        | JArray _ -> "[...]"
 
-    /// Try to convert JsonValue to string with coercion
-    let tryCoerceToString (value: JsonValue) : string option =
-        match value with
-        | JString s -> Some s
-        | JNumber n -> Some(n.ToString())
-        | JBool b -> Some(if b then "true" else "false")
-        | JNull -> None
-        | _ -> None
-
-    /// Extract int64 value from JsonValue
-    let tryGetInt64 (value: JsonValue) : int64 option =
+    /// Extract int64 value from JsonValue - Result version
+    let tryGetInt64 (value: JsonValue) : Result<int64, string> =
         match value with
         | JNumber n ->
             try
-                Some(Decimal.ToInt64 n)
-            with :? OverflowException ->
-                None
-        | _ -> None
+                Ok(int64 n)
+            with _ ->
+                Error "Cannot convert number to int64"
+        | _ -> Error "Value is not a number"
 
     /// Convert JsonValue back to obj for JSON serialization
     let rec fromJsonValue (value: JsonValue) : obj =

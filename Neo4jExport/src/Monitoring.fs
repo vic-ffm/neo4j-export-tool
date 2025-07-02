@@ -1,61 +1,69 @@
-namespace Neo4jExport
+module Neo4jExport.Monitoring
 
 open System
 open System.IO
+open Neo4jExport
 
-module Monitoring =
-    /// Validates if the path is suitable for DriveInfo monitoring
-    let private isValidDriveInfoPath (path: string) =
-        try
-            if String.IsNullOrWhiteSpace(path) then false
-            elif path.StartsWith(@"\\") then false
-            else Path.IsPathRooted(path)
-        with _ ->
-            false
+type ResourceMonitor(context: ApplicationContext, config: ExportConfig) =
+    let checkInterval =
+        TimeSpan.FromSeconds(30.0)
 
-    let startResourceMonitor (context: ApplicationContext) (config: ExportConfig) =
-        let monitorTask =
-            async {
-                Log.debug "Starting resource monitor..."
+    let agent =
+        MailboxProcessor.Start(fun inbox ->
+            let rec loop (state: ResourceState) =
+                async {
+                    if
+                        state.IsRunning
+                        && DateTime.UtcNow - state.LastCheck >= checkInterval
+                    then
+                        // Perform resource check
+                        let drive =
+                            DriveInfo(Path.GetPathRoot(config.OutputDirectory))
 
-                let canMonitorDisk =
-                    isValidDriveInfoPath config.OutputDirectory
+                        let availableGB =
+                            float drive.AvailableFreeSpace / 1073741824.0
 
-                if not canMonitorDisk then
-                    Log.warn (
-                        sprintf
-                            "Cannot monitor disk space for path: %s (UNC or invalid path format)"
-                            config.OutputDirectory
-                    )
+                        if availableGB < float config.MinDiskGb then
+                            Log.fatal (sprintf "Disk space critically low: %.2f GB" availableGB)
+                            context.CancellationTokenSource.Cancel()
 
-                while not (AppContext.isCancellationRequested context) do
-                    try
-                        if canMonitorDisk then
-                            let drive =
-                                DriveInfo(config.OutputDirectory)
+                        return!
+                            loop
+                                { state with
+                                    LastCheck = DateTime.UtcNow }
+                    else
+                        // Wait for message or timeout
+                        let! msgOpt = inbox.TryReceive(1000)
 
-                            let availableGb =
-                                drive.AvailableFreeSpace / 1073741824L
+                        match msgOpt with
+                        | Some(CheckResources reply) ->
+                            // Immediate check requested
+                            reply.Reply(Ok())
 
-                            if availableGb < config.MinDiskGb then
-                                Log.fatal (
-                                    sprintf
-                                        "Low disk space - %dGB remaining (threshold: %dGB)"
-                                        availableGb
-                                        config.MinDiskGb
-                                )
+                            return!
+                                loop
+                                    { state with
+                                        LastCheck = DateTime.UtcNow }
+                        | Some Stop -> return () // Exit
+                        | None -> return! loop state
+                }
 
-                                AppContext.cancel context
+            loop
+                { LastCheck = DateTime.UtcNow
+                  IsRunning = true })
 
-                        let memoryMb =
-                            GC.GetTotalMemory(false) / 1048576L
+    member _.Start() = () // Agent starts automatically
 
-                        if memoryMb > config.MaxMemoryMb then
-                            Log.warn (sprintf "High memory usage: %dMB (limit: %dMB)" memoryMb config.MaxMemoryMb)
+    member _.Stop() = agent.Post(Stop)
 
-                        do! Async.Sleep 30000
-                    with ex ->
-                        Log.logException ex
-            }
+    interface IDisposable with
+        member _.Dispose() =
+            agent.Post(Stop)
+            (agent :> IDisposable).Dispose()
 
-        Async.Start(monitorTask, AppContext.getCancellationToken context)
+let startResourceMonitor context config =
+    let monitor =
+        new ResourceMonitor(context, config)
+
+    monitor.Start()
+    monitor

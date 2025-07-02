@@ -1,11 +1,13 @@
 namespace Neo4jExport
 
 open System
+open System.Collections.Generic
 open System.IO
 open System.Text
 open System.Text.Json
 open System.Buffers
 open Neo4j.Driver
+open ErrorTracking
 
 /// Core export functionality for streaming Neo4j data to JSONL format
 /// This module uses JavaScriptEncoder.UnsafeRelaxedJsonEscaping throughout.
@@ -279,8 +281,51 @@ module Export =
                     // Even error serialization failed, write minimal error info
                     writeSerializationError writer "catastrophic" (sprintf "depth_%d" depth)
 
+    /// Creates error context details for error tracking
+    let private createErrorContext (nodeId: int64 option) (relId: int64 option) (additionalInfo: (string * obj) list) =
+        let details =
+            Dictionary<string, JsonValue>()
+
+        additionalInfo
+        |> List.iter (fun (key, value) ->
+            match JsonHelpers.toJsonValue value with
+            | Ok jsonValue -> details.[key] <- jsonValue
+            | Error _ -> details.[key] <- JString(value.ToString()))
+
+        if details.Count > 0 then
+            Some(details :> IDictionary<string, JsonValue>)
+        else
+            None
+
+    /// Tracks serialization errors with rich context
+    let private trackSerializationError
+        (errorTracker: ErrorTracker)
+        (message: string)
+        (id: int64)
+        (entityType: string)
+        (exceptionType: string)
+        =
+        let context =
+            [ "entity_type", box entityType
+              "exception_type", box exceptionType
+              "serialization_phase", box "write" ]
+
+        let details =
+            createErrorContext
+                (if entityType = "node" then Some id else None)
+                (if entityType = "relationship" then Some id else None)
+                context
+
+        errorTracker.AddError(message, ?details = details)
+
     /// Writes a node directly to the Utf8JsonWriter for optimal performance
-    let private writeNode (writer: Utf8JsonWriter) (node: INode) (nodeId: int64) (exportId: Guid) =
+    let private writeNode
+        (writer: Utf8JsonWriter)
+        (node: INode)
+        (nodeId: int64)
+        (exportId: Guid)
+        (errorTracker: ErrorTracker)
+        =
         writer.WriteStartObject()
         writer.WriteString("type", "node")
         writer.WriteNumber("id", nodeId)
@@ -295,8 +340,14 @@ module Export =
             |> List.iter (fun label ->
                 let safeLabel =
                     if label = null then
+                        errorTracker.AddWarning(sprintf "Null label found on node %d" nodeId, nodeId = nodeId)
                         "null"
                     elif label.Length > 1000 then
+                        errorTracker.AddWarning(
+                            sprintf "Label truncated on node %d: %s..." nodeId (label.Substring(0, 50)),
+                            nodeId = nodeId
+                        )
+
                         label.Substring(0, 1000) + "..."
                     else
                         label
@@ -304,8 +355,29 @@ module Export =
                 writer.WriteStringValue safeLabel)
 
             if node.Labels.Count > 100 then
+                errorTracker.AddWarning(
+                    sprintf "Too many labels on node %d: %d total, showing first 100" nodeId node.Labels.Count,
+                    nodeId = nodeId
+                )
+
                 writer.WriteStringValue "_too_many_labels"
         with ex ->
+            let context =
+                createErrorContext (Some nodeId) None [ ("exception_type", box (ex.GetType().Name)) ]
+
+            match context with
+            | Some details ->
+                errorTracker.AddError(
+                    sprintf "Failed to serialize labels for node %d: %s" nodeId ex.Message,
+                    nodeId = nodeId,
+                    details = details
+                )
+            | None ->
+                errorTracker.AddError(
+                    sprintf "Failed to serialize labels for node %d: %s" nodeId ex.Message,
+                    nodeId = nodeId
+                )
+
             writer.WriteStringValue(sprintf "_label_error: %s" (ex.GetType().Name))
 
         writer.WriteEndArray()
@@ -324,19 +396,54 @@ module Export =
                 let safePropName =
                     try
                         if kvp.Key = null then
+                            errorTracker.AddWarning(
+                                sprintf "Null property key on node %d at index %d" nodeId i,
+                                nodeId = nodeId
+                            )
+
                             "_null_key"
                         else
                             ensureUniqueKey kvp.Key keyTracker
-                    with _ ->
+                    with ex ->
+                        errorTracker.AddWarning(
+                            sprintf "Property key error on node %d at index %d: %s" nodeId i ex.Message,
+                            nodeId = nodeId
+                        )
+
                         sprintf "_key_error_%d" i
 
                 writer.WritePropertyName safePropName
                 serializeValue writer kvp.Value 0)
 
             if node.Properties.Count > MaxCollectionItems then
+                errorTracker.AddWarning(
+                    sprintf
+                        "Too many properties on node %d: %d total, showing first %d"
+                        nodeId
+                        node.Properties.Count
+                        MaxCollectionItems,
+                    nodeId = nodeId
+                )
+
                 writer.WritePropertyName "_truncated"
                 writer.WriteStringValue(sprintf "too_many_properties: %d total" node.Properties.Count)
         with ex ->
+            let context =
+                createErrorContext (Some nodeId) None [ ("exception_type", box (ex.GetType().Name)) ]
+
+            match context with
+            | Some details ->
+                errorTracker.AddError(
+                    sprintf "Failed to serialize properties for node %d: %s" nodeId ex.Message,
+                    nodeId = nodeId,
+                    details = details
+                )
+            | None ->
+                errorTracker.AddError(
+                    sprintf "Failed to serialize properties for node %d: %s" nodeId ex.Message,
+                    nodeId = nodeId
+                )
+
             writer.WritePropertyName "_properties_error"
             writer.WriteStringValue(ex.GetType().Name)
 
@@ -351,6 +458,7 @@ module Export =
         (startId: int64)
         (endId: int64)
         (exportId: Guid)
+        (errorTracker: ErrorTracker)
         =
         writer.WriteStartObject()
         writer.WriteString("type", "relationship")
@@ -360,12 +468,26 @@ module Export =
         let safeType =
             try
                 if rel.Type = null then
+                    errorTracker.AddWarning(sprintf "Null relationship type on relationship %d" relId, relId = relId)
                     "_null_type"
                 elif rel.Type.Length > 1000 then
+                    errorTracker.AddWarning(
+                        sprintf
+                            "Relationship type truncated on relationship %d: %s..."
+                            relId
+                            (rel.Type.Substring(0, 50)),
+                        relId = relId
+                    )
+
                     rel.Type.Substring(0, 1000) + "..."
                 else
                     rel.Type
-            with _ ->
+            with ex ->
+                errorTracker.AddError(
+                    sprintf "Failed to read relationship type on relationship %d: %s" relId ex.Message,
+                    relId = relId
+                )
+
                 "_type_error"
 
         writer.WriteString("label", safeType)
@@ -386,19 +508,54 @@ module Export =
                 let safePropName =
                     try
                         if kvp.Key = null then
+                            errorTracker.AddWarning(
+                                sprintf "Null property key on relationship %d at index %d" relId i,
+                                relId = relId
+                            )
+
                             "_null_key"
                         else
                             ensureUniqueKey kvp.Key keyTracker
-                    with _ ->
+                    with ex ->
+                        errorTracker.AddWarning(
+                            sprintf "Property key error on relationship %d at index %d: %s" relId i ex.Message,
+                            relId = relId
+                        )
+
                         sprintf "_key_error_%d" i
 
                 writer.WritePropertyName safePropName
                 serializeValue writer kvp.Value 0)
 
             if rel.Properties.Count > MaxCollectionItems then
+                errorTracker.AddWarning(
+                    sprintf
+                        "Too many properties on relationship %d: %d total, showing first %d"
+                        relId
+                        rel.Properties.Count
+                        MaxCollectionItems,
+                    relId = relId
+                )
+
                 writer.WritePropertyName "_truncated"
                 writer.WriteStringValue(sprintf "too_many_properties: %d total" rel.Properties.Count)
         with ex ->
+            let context =
+                createErrorContext None (Some relId) [ ("exception_type", box (ex.GetType().Name)) ]
+
+            match context with
+            | Some details ->
+                errorTracker.AddError(
+                    sprintf "Failed to serialize properties for relationship %d: %s" relId ex.Message,
+                    relId = relId,
+                    details = details
+                )
+            | None ->
+                errorTracker.AddError(
+                    sprintf "Failed to serialize properties for relationship %d: %s" relId ex.Message,
+                    relId = relId
+                )
+
             writer.WritePropertyName "_properties_error"
             writer.WriteStringValue(ex.GetType().Name)
 
@@ -448,7 +605,8 @@ module Export =
     type BatchProcessor =
         { Query: string
           GetTotalQuery: string option
-          ProcessRecord: ArrayBufferWriter<byte> -> IRecord -> Guid -> ExportProgress -> (int64 * ExportProgress)
+          ProcessRecord:
+              ArrayBufferWriter<byte> -> IRecord -> Guid -> ExportProgress -> ErrorTracker -> (int64 * ExportProgress)
           EntityName: string }
 
     /// Record handler that can maintain state
@@ -463,6 +621,7 @@ module Export =
         (fileStream: FileStream)
         (initialStats: ExportProgress)
         (exportId: Guid)
+        (errorTracker: ErrorTracker)
         (handlerState: 'state)
         (handler: RecordHandler<'state>)
         : Async<Result<ExportProgress * 'state, AppError>> =
@@ -538,7 +697,7 @@ module Export =
                                 buffer.Clear()
 
                                 let dataBytes, newStats =
-                                    processor.ProcessRecord buffer record exportId batchStats
+                                    processor.ProcessRecord buffer record exportId batchStats errorTracker
 
                                 fileStream.Write buffer.WrittenSpan
                                 fileStream.Write(newlineBytes, 0, newlineBytes.Length)
@@ -588,11 +747,19 @@ module Export =
         (record: IRecord)
         (exportId: Guid)
         (stats: ExportProgress)
+        (errorTracker: ErrorTracker)
         =
         let nodeId =
             try
                 record.["nodeId"].As<int64>()
-            with _ ->
+            with ex ->
+                let context =
+                    createErrorContext None None [ ("exception", box ex.Message) ]
+
+                match context with
+                | Some details -> errorTracker.AddError("Failed to extract node ID from record", details = details)
+                | None -> errorTracker.AddError("Failed to extract node ID from record")
+
                 -1L
 
         // Create a new writer for each record, pointed at the reusable buffer
@@ -601,9 +768,16 @@ module Export =
 
         try
             let node = record.["n"].As<INode>()
-            writeNode writer node nodeId exportId
+            writeNode writer node nodeId exportId errorTracker
         with ex ->
-            Log.warn (sprintf "Node serialization issue for ID %d: %s" nodeId ex.Message)
+            trackSerializationError
+                errorTracker
+                (sprintf "Node serialization failed for ID %d: %s" nodeId ex.Message)
+                nodeId
+                "node"
+                (ex.GetType().Name)
+
+            // Still write fallback JSON
             writer.WriteStartObject()
             writer.WriteString("type", "node")
             writer.WriteNumber("id", nodeId)
@@ -631,23 +805,34 @@ module Export =
         (record: IRecord)
         (exportId: Guid)
         (stats: ExportProgress)
+        (errorTracker: ErrorTracker)
         =
         let relId =
             try
                 record.["relId"].As<int64>()
-            with _ ->
+            with ex ->
+                let context =
+                    createErrorContext None None [ ("exception", box ex.Message) ]
+
+                match context with
+                | Some details ->
+                    errorTracker.AddError("Failed to extract relationship ID from record", details = details)
+                | None -> errorTracker.AddError("Failed to extract relationship ID from record")
+
                 -1L
 
         let startId =
             try
                 record.["startId"].As<int64>()
-            with _ ->
+            with ex ->
+                errorTracker.AddWarning(sprintf "Failed to extract start ID for relationship %d" relId, relId = relId)
                 -1L
 
         let endId =
             try
                 record.["endId"].As<int64>()
-            with _ ->
+            with ex ->
+                errorTracker.AddWarning(sprintf "Failed to extract end ID for relationship %d" relId, relId = relId)
                 -1L
 
         // Create a new writer for each record, pointed at the reusable buffer
@@ -656,9 +841,16 @@ module Export =
 
         try
             let rel = record.["r"].As<IRelationship>()
-            writeRelationship writer rel relId startId endId exportId
+            writeRelationship writer rel relId startId endId exportId errorTracker
         with ex ->
-            Log.warn (sprintf "Relationship serialization fallback for ID %d: %s" relId ex.Message)
+            trackSerializationError
+                errorTracker
+                (sprintf "Relationship serialization failed for ID %d: %s" relId ex.Message)
+                relId
+                "relationship"
+                (ex.GetType().Name)
+
+            // Still write fallback JSON
             writer.WriteStartObject()
             writer.WriteString("type", "relationship")
             writer.WriteNumber("id", relId)
@@ -680,6 +872,7 @@ module Export =
 
         dataBytes, newStats
 
+
     /// Unified node export with statistics
     let internal exportNodesUnified
         (context: ApplicationContext)
@@ -688,12 +881,18 @@ module Export =
         (fileStream: FileStream)
         (stats: ExportProgress)
         (exportId: Guid)
-        : Async<Result<ExportProgress * LabelStatsTracker.Tracker, AppError>> =
+        (errorTracker: ErrorTracker)
+        (lineState: LineTrackingState)
+        : Async<Result<(ExportProgress * LabelStatsTracker.Tracker * LineTrackingState), AppError>> =
         async {
             Log.info "Exporting nodes with label statistics..."
 
             let initialLabelTracker =
                 createLabelStatsTracker ()
+
+            // Track node start line
+            let lineStateWithNodeStart =
+                lineState |> LineTracking.recordTypeStart "node"
 
             let processor =
                 { Query = "MATCH (n) RETURN n, id(n) as nodeId, labels(n) as labels SKIP $skip LIMIT $limit"
@@ -701,55 +900,11 @@ module Export =
                   ProcessRecord = processNodeRecord
                   EntityName = "Nodes" }
 
-            // Handle label statistics - returns new tracker state
-            let labelHandler
-                (tracker: LabelStatsTracker.Tracker)
-                (record: IRecord)
-                (bytesWritten: int64)
-                : LabelStatsTracker.Tracker =
-                let labels =
-                    try
-                        record.["labels"].As<Collections.Generic.List<obj>>()
-                        |> Seq.map string
-                        |> Seq.toList
-                    with _ ->
-                        []
+            // We need a new processBatchedQuery that handles line tracking
+            // For now, let's use the existing one and thread line state manually
+            let mutable currentLineState =
+                lineStateWithNodeStart
 
-                let labelsToProcess =
-                    if List.isEmpty labels then [ "_unknown" ] else labels
-
-                // Distribute bytes evenly across labels for this record
-                let labelCount = List.length labelsToProcess
-
-                let bytesPerLabel =
-                    if labelCount = 0 then
-                        bytesWritten
-                    else
-                        bytesWritten / int64 labelCount
-
-                let remainder =
-                    if labelCount = 0 then
-                        0L
-                    else
-                        bytesWritten % int64 labelCount
-
-                // Thread the tracker through all label updates using fold
-                labelsToProcess
-                |> List.indexed
-                |> List.fold
-                    (fun currentTracker (index, label) ->
-                        let bytesForThisLabel =
-                            if index = 0 then
-                                bytesPerLabel + remainder
-                            else
-                                bytesPerLabel
-
-                        currentTracker
-                        |> LabelStatsTracker.startLabel label
-                        |> LabelStatsTracker.updateLabel label 1L bytesForThisLabel)
-                    tracker
-
-            // Use generic processor with immutable label tracker
             match!
                 processBatchedQuery
                     processor
@@ -759,11 +914,39 @@ module Export =
                     fileStream
                     stats
                     exportId
+                    errorTracker
                     initialLabelTracker
-                    labelHandler
+                    (fun tracker record bytesWritten ->
+                        errorTracker.IncrementLine()
+                        currentLineState <- currentLineState |> LineTracking.incrementLine
+
+                        let labels =
+                            try
+                                record.["labels"].As<List<obj>>()
+                                |> Seq.map (fun o -> o.ToString())
+                                |> Seq.toList
+                            with _ ->
+                                []
+
+                        let bytesPerLabel =
+                            if List.isEmpty labels then
+                                bytesWritten
+                            else
+                                bytesWritten / int64 labels.Length
+
+                        let newTracker =
+                            labels
+                            |> List.fold
+                                (fun tracker label ->
+                                    tracker
+                                    |> LabelStatsTracker.startLabel label
+                                    |> LabelStatsTracker.updateLabel label 1L bytesPerLabel)
+                                tracker
+
+                        newTracker)
             with
             | Error e -> return Error e
-            | Ok(finalStats, finalLabelTracker) -> return Ok(finalStats, finalLabelTracker)
+            | Ok(finalStats, finalLabelTracker) -> return Ok(finalStats, finalLabelTracker, currentLineState)
         }
 
     let internal exportRelationships
@@ -773,9 +956,16 @@ module Export =
         (fileStream: FileStream)
         stats
         exportId
-        : Async<Result<ExportProgress, AppError>> =
+        (errorTracker: ErrorTracker)
+        (lineState: LineTrackingState)
+        : Async<Result<(ExportProgress * LineTrackingState), AppError>> =
         async {
             Log.info "Exporting relationships..."
+
+            // Track relationship start line
+            let lineStateWithRelStart =
+                lineState
+                |> LineTracking.recordTypeStart "relationship"
 
             // Create relationship processor
             let processor =
@@ -785,13 +975,102 @@ module Export =
                   ProcessRecord = processRelationshipRecord
                   EntityName = "Relationships" }
 
-            // Use generic processor with unit state (no additional handling needed)
+            // Thread line state through relationship processing
+            let mutable currentLineState =
+                lineStateWithRelStart
+
+            // Handler that just counts lines - returns unit since no state is tracked
+            let relationshipHandler () (record: IRecord) (bytesWritten: int64) =
+                errorTracker.IncrementLine()
+                currentLineState <- currentLineState |> LineTracking.incrementLine
+                ()
+
+            // Use generic processor with error tracker
             match!
-                processBatchedQuery processor context session config fileStream stats exportId () (fun state _ _ ->
-                    state)
+                processBatchedQuery
+                    processor
+                    context
+                    session
+                    config
+                    fileStream
+                    stats
+                    exportId
+                    errorTracker
+                    ()
+                    relationshipHandler
             with
             | Error e -> return Error e
-            | Ok(finalStats, _) -> return Ok finalStats
+            | Ok(finalStats, _) -> return Ok(finalStats, currentLineState)
+        }
+
+    /// Export error and warning records from the error tracker
+    let internal exportErrors
+        (fileStream: FileStream)
+        (errorTracker: ErrorTracker)
+        (exportId: Guid)
+        (lineState: LineTrackingState)
+        : Async<int64 * LineTrackingState> =
+        async {
+            let errors = errorTracker.GetErrors()
+            let mutable count = 0L
+            let mutable currentLineState = lineState
+
+            let newlineBytes =
+                Encoding.UTF8.GetBytes Environment.NewLine
+
+            for error in errors do
+                // Track first error/warning line
+                currentLineState <-
+                    currentLineState
+                    |> LineTracking.recordTypeStart error.Type
+                    |> LineTracking.incrementLine
+
+                use memoryStream = new MemoryStream()
+
+                use writer =
+                    new Utf8JsonWriter(memoryStream, JsonConfig.createWriterOptions ())
+
+                writer.WriteStartObject()
+                writer.WriteString("type", error.Type)
+                writer.WriteString("export_id", exportId.ToString())
+                writer.WriteString("timestamp", error.Timestamp.ToString("O"))
+
+                match error.Line with
+                | Some line -> writer.WriteNumber("line", line)
+                | None -> ()
+
+                writer.WriteString("message", error.Message)
+
+                match error.NodeId with
+                | Some id -> writer.WriteNumber("node_id", id)
+                | None -> ()
+
+                match error.RelationshipId with
+                | Some id -> writer.WriteNumber("relationship_id", id)
+                | None -> ()
+
+                match error.Details with
+                | Some details ->
+                    writer.WritePropertyName("details")
+                    // Serialize details dictionary
+                    writer.WriteStartObject()
+
+                    for kvp in details do
+                        writer.WritePropertyName(kvp.Key)
+                        JsonHelpers.writeJsonValue writer kvp.Value
+
+                    writer.WriteEndObject()
+                | None -> ()
+
+                writer.WriteEndObject()
+                writer.Flush()
+
+                let bytes = memoryStream.ToArray()
+                fileStream.Write(bytes, 0, bytes.Length)
+                fileStream.Write(newlineBytes, 0, newlineBytes.Length)
+                count <- count + 1L
+
+            return (count, currentLineState)
         }
 
     /// Common export completion logging

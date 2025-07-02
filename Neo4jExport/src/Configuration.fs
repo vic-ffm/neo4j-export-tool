@@ -89,15 +89,17 @@ module Configuration =
         let nodeCount =
             match metadata.DatabaseStatistics.TryGetValue("nodeCount") with
             | true, value ->
-                JsonHelpers.tryGetInt64 value
-                |> Option.defaultValue 0L
+                match JsonHelpers.tryGetInt64 value with
+                | Ok v -> v
+                | Error _ -> 0L
             | _ -> 0L
 
         let relCount =
             match metadata.DatabaseStatistics.TryGetValue("relCount") with
             | true, value ->
-                JsonHelpers.tryGetInt64 value
-                |> Option.defaultValue 0L
+                match JsonHelpers.tryGetInt64 value with
+                | Ok v -> v
+                | Error _ -> 0L
             | _ -> 0L
 
         let exportIdShort =
