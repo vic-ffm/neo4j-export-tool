@@ -7,6 +7,9 @@ open Neo4j.Driver
 
 /// Metadata collection for export manifest
 module Metadata =
+    [<Literal>]
+    let private FORMAT_VERSION = "1.0.0"
+
     let private collectDatabaseInfo (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) =
         async {
             let info = Dictionary<string, JsonValue>()
@@ -67,63 +70,6 @@ module Metadata =
                 Log.warn (sprintf "Exception while retrieving database name: %s" ex.Message)
                 info.["database_name"] <- JString "neo4j"
 
-            try
-                let dbName =
-                    match info.TryGetValue("database_name") with
-                    | true, value ->
-                        JsonHelpers.tryGetString value
-                        |> Option.defaultValue "neo4j"
-                    | _ -> "neo4j"
-
-                let! creationResult =
-                    Neo4j.executeQueryList
-                        session
-                        breaker
-                        config
-                        (sprintf "SHOW DATABASE `%s` YIELD createdAt RETURN createdAt" dbName)
-                        (fun record ->
-                            let createdAt = record.["createdAt"]
-
-                            if isNull createdAt then
-                                None
-                            else
-                                Some(createdAt.As<DateTime>().ToString("O")))
-                        1 // Max 1 result expected
-
-                match creationResult with
-                | Ok records ->
-                    match records with
-                    | [ Some createdAt ] -> info.["creation_date"] <- JString createdAt
-                    | _ -> () // No creation date available
-                | Error _ -> ()
-            with _ ->
-                ()
-
-            try
-                let dbName =
-                    match info.TryGetValue("database_name") with
-                    | true, value ->
-                        JsonHelpers.tryGetString value
-                        |> Option.defaultValue "neo4j"
-                    | _ -> "neo4j"
-
-                let! storeSizeResult =
-                    Neo4j.executeQueryList
-                        session
-                        breaker
-                        config
-                        "CALL db.stats.store.size() YIELD value RETURN value"
-                        (fun record -> record.["value"].As<int64>())
-                        1 // Max 1 result expected
-
-                match storeSizeResult with
-                | Ok records ->
-                    match records with
-                    | [ sizeBytes ] -> info.["size_bytes"] <- JNumber(decimal sizeBytes)
-                    | _ -> () // Size not available
-                | Error _ -> ()
-            with _ ->
-                ()
 
             return Ok(info :> IDictionary<string, JsonValue>)
         }
@@ -243,6 +189,28 @@ module Metadata =
         { metadata with
             ExportManifest = Some manifestDetails }
 
+    /// Adds error summary to metadata (always present)
+    let addErrorSummary (metadata: FullMetadata) (errorTracker: ErrorTracking.ErrorTracker) : FullMetadata =
+        let errorSummary =
+            { ErrorCount = errorTracker.GetErrorCount()
+              WarningCount = errorTracker.GetWarningCount()
+              HasErrors = errorTracker.HasErrors() }
+
+        { metadata with
+            ErrorSummary = Some errorSummary }
+
+    /// Adds format info to metadata with line numbers
+    let addFormatInfo (metadata: FullMetadata) (lineState: LineTrackingState) : FullMetadata =
+        let formatInfo =
+            { Type = "jsonl"; MetadataLine = 1 }
+
+        let updatedExportMetadata =
+            { metadata.ExportMetadata with
+                Format = Some formatInfo }
+
+        { metadata with
+            ExportMetadata = updatedExportMetadata }
+
     let collect
         (context: ApplicationContext)
         (session: SafeSession)
@@ -251,6 +219,7 @@ module Metadata =
         =
         async {
             Log.info "Collecting metadata..."
+            // Sequential collection due to Neo4j session thread-safety constraints
             let! dbInfo = collectDatabaseInfo session breaker config
             let! stats = collectStatistics session breaker config
             let! schema = collectSchema session breaker config
@@ -273,52 +242,55 @@ module Metadata =
 
                 let! scriptChecksum = Utils.getScriptChecksum context |> Async.AwaitTask
 
+                let exportScript =
+                    { Name = Path.GetFileName(System.Reflection.Assembly.GetExecutingAssembly().Location)
+                      Version = Constants.getVersion ()
+                      Checksum = scriptChecksum
+                      RuntimeVersion = Environment.Version.ToString() }
+
+                let compatibility =
+                    { MinimumReaderVersion = "1.0.0"
+                      DeprecatedFields = []
+                      BreakingChangeVersion = "2.0.0" }
+
+                let compression =
+                    { Recommended = "zstd"
+                      Compatible = [ "zstd"; "gzip"; "brotli"; "none" ]
+                      ExpectedRatio = Some 0.3 // Estimate 70% compression
+                      Suffix = ".jsonl.zst" }
+
                 let metadata =
-                    { ExportMetadata =
+                    { FormatVersion = FORMAT_VERSION // New root-level field
+                      ExportMetadata =
                         { ExportId = Guid.NewGuid()
                           ExportTimestampUtc = DateTime.UtcNow
-                          ExportScript =
-                            { Name = Path.GetFileName(System.Reflection.Assembly.GetExecutingAssembly().Location)
-                              Version = Constants.getVersion ()
-                              Checksum = scriptChecksum
-                              RuntimeVersion = Environment.Version.ToString() }
-                          ExportMode = "native_driver_streaming" }
+                          ExportMode = "native_driver_streaming"
+                          Format = None }
+                      Producer = exportScript // Renamed from ExportScript
                       SourceSystem =
                         { Type = "neo4j"
                           Version =
                             match db.TryGetValue("version") with
                             | true, value ->
-                                JsonHelpers.tryGetString value
-                                |> Option.defaultValue "unknown"
+                                match JsonHelpers.tryGetString value with
+                                | Ok s -> s
+                                | Error _ -> "unknown"
                             | _ -> "unknown"
                           Edition =
                             match db.TryGetValue("edition") with
                             | true, value ->
-                                JsonHelpers.tryGetString value
-                                |> Option.defaultValue "unknown"
+                                match JsonHelpers.tryGetString value with
+                                | Ok s -> s
+                                | Error _ -> "unknown"
                             | _ -> "unknown"
                           Database =
                             { Name =
                                 match db.TryGetValue("database_name") with
                                 | true, value ->
-                                    JsonHelpers.tryGetString value
-                                    |> Option.defaultValue "neo4j"
-                                | _ -> "neo4j"
-                              CreationDate =
-                                match db.TryGetValue("creation_date") with
-                                | true, value ->
                                     match JsonHelpers.tryGetString value with
-                                    | Some dateStr ->
-                                        try
-                                            Some(DateTime.Parse(dateStr))
-                                        with _ ->
-                                            None
-                                    | None -> None
-                                | _ -> None
-                              SizeBytes =
-                                match db.TryGetValue("size_bytes") with
-                                | true, value -> JsonHelpers.tryGetInt64 value
-                                | _ -> None } }
+                                    | Ok s -> s
+                                    | Error _ -> "neo4j"
+                                | _ -> "neo4j" } }
                       DatabaseStatistics = st
                       DatabaseSchema = sc
                       Environment =
@@ -336,7 +308,15 @@ module Metadata =
                             else
                                 "basic"
                           DataValidation = config.ValidateJsonOutput }
-                      ExportManifest = None }
+                      ExportManifest = None
+                      ErrorSummary = None
+                      RecordTypes = RecordTypes.getRecordTypes ()
+                      Compatibility = compatibility
+                      Compression = compression
+                      Reserved =
+                        Some
+                            { Purpose = "JSONL streaming compatibility - enables single-pass export"
+                              Padding = None } }
 
                 Log.info "Metadata collection completed"
                 return Ok metadata
@@ -368,11 +348,17 @@ module Metadata =
 
         let perLabelOverhead = 500
         let generalBuffer = 4096
+        let recordTypesSize = 2000 // Fixed size for record type definitions
+        let compressionSize = 500 // Fixed size for compression hints
+        let compatibilitySize = 300 // Fixed size for compatibility info
 
         let estimatedSize =
             currentMetadataBytes.Length
             + (actualLabelCount * perLabelOverhead)
             + generalBuffer
+            + recordTypesSize
+            + compressionSize
+            + compatibilitySize
             + 1024
 
         let withMargin =

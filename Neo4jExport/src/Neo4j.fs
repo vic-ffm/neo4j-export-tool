@@ -39,28 +39,18 @@ type SafeSession(session: IAsyncSession) =
 /// Neo4j database interaction with resilience patterns
 module Neo4j =
     module private Validation =
-        /// Result builder for validation pipelines
-        type ValidationBuilder() =
-            member _.Return(x) = Ok x
-            member _.ReturnFrom(x) = x
-            member _.Bind(x, f) = Result.bind f x
-            member _.Zero() = Ok()
-
-        let validation = ValidationBuilder()
-
-        /// Validate with a predicate and error message
-        let validate pred error value =
-            if pred value then Ok value else Error error
-
         /// Validation combinators
         let notEmpty fieldName value =
-            validate
-                (String.IsNullOrWhiteSpace >> not)
-                (QueryError(value, sprintf "%s cannot be empty" fieldName, None))
-                value
+            if String.IsNullOrWhiteSpace(value) |> not then
+                Ok value
+            else
+                Error(QueryError(value, sprintf "%s cannot be empty" fieldName, None))
 
         let positive fieldName value =
-            validate (fun v -> v > 0) (ConfigError(sprintf "%s must be positive" fieldName)) value
+            if value > 0 then
+                Ok value
+            else
+                Error(ConfigError(sprintf "%s must be positive" fieldName))
 
         /// Composed validators
         let validateQuery = notEmpty "Query"

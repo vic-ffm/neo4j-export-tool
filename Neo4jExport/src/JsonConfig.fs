@@ -50,24 +50,6 @@ module JsonConfig =
            security = metadata.Security
            export_manifest = metadata.ExportManifest |}
 
-    /// Create metadata with reserved field but no padding
-    let toSerializableMetadataBase (metadata: FullMetadata) =
-        {| export_metadata = metadata.ExportMetadata
-           source_system = metadata.SourceSystem
-           database_statistics =
-            metadata.DatabaseStatistics
-            |> Seq.map (fun kvp -> kvp.Key, JsonHelpers.fromJsonValue kvp.Value)
-            |> dict
-           database_schema =
-            metadata.DatabaseSchema
-            |> Seq.map (fun kvp -> kvp.Key, JsonHelpers.fromJsonValue kvp.Value)
-            |> dict
-           environment = metadata.Environment
-           security = metadata.Security
-           export_manifest = metadata.ExportManifest
-           _reserved =
-            {| purpose = "JSONL streaming compatibility - enables single-pass export"
-               version = "1.0" |} |}
 
     /// Calculate exact bytes needed for direct padding
     let calculateDirectPaddingBytes (baseMetadataSize: int) (targetSize: int) : Result<int, string> =

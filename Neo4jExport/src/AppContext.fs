@@ -25,5 +25,3 @@ module AppContext =
 
     /// Registers a temporary file for cleanup
     let addTempFile (context: ApplicationContext) (path: string) = context.TempFiles.Add(path)
-    /// Registers an active process for cleanup
-    let addActiveProcess (context: ApplicationContext) (proc: Process) = context.ActiveProcesses.Add(proc)
