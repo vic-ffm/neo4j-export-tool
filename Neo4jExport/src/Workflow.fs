@@ -4,6 +4,7 @@ open System
 open System.IO
 open System.Text
 open Neo4j.Driver
+open ErrorTracking
 
 /// Main workflow orchestration for the export process
 module Workflow =
@@ -95,24 +96,70 @@ module Workflow =
                       BytesWritten = 0L
                       StartTime = DateTime.UtcNow }
 
-                let! nodeResult = Export.exportNodesUnified context session config finalStream initialStats exportId
+                // Create error tracker for the export
+                let errorTracker = ErrorTracker()
+
+                // Create line tracker for the export
+                let lineTracker = LineTracking.create ()
+
+                let! nodeResult =
+                    Export.exportNodesUnified
+                        context
+                        session
+                        config
+                        finalStream
+                        initialStats
+                        exportId
+                        errorTracker
+                        lineTracker
 
                 match nodeResult with
                 | Error e -> return Error e
-                | Ok(nodeStats, labelStats) ->
-                    match! Export.exportRelationships context session config finalStream nodeStats exportId with
+                | Ok(nodeStats, labelStats, lineStateAfterNodes) ->
+                    match!
+                        Export.exportRelationships
+                            context
+                            session
+                            config
+                            finalStream
+                            nodeStats
+                            exportId
+                            errorTracker
+                            lineStateAfterNodes
+                    with
                     | Error e -> return Error e
-                    | Ok finalStats ->
+                    | Ok(finalStats, lineStateAfterRels) ->
+                        // Export any error/warning records if they exist
+                        let mutable finalStatsWithErrors =
+                            finalStats
+
+                        let mutable finalLineState =
+                            lineStateAfterRels
+
+                        if errorTracker.HasErrors() then
+                            let! (errorCount, lineStateAfterErrors) =
+                                Export.exportErrors finalStream errorTracker exportId lineStateAfterRels
+
+                            Log.warn (sprintf "Exported %d error/warning records" errorCount)
+                            finalLineState <- lineStateAfterErrors
+
+                            finalStatsWithErrors <-
+                                { finalStats with
+                                    RecordsProcessed = finalStats.RecordsProcessed + errorCount }
+
                         do! finalStream.FlushAsync() |> Async.AwaitTask
 
                         let completedStats =
-                            ExportStats.complete finalStats DateTime.UtcNow
+                            ExportStats.complete finalStatsWithErrors DateTime.UtcNow
 
                         let exportDuration =
                             (DateTime.UtcNow - exportStartTime).TotalSeconds
 
                         let enhancedMetadata =
-                            Metadata.enhanceWithManifest metadata labelStats exportDuration
+                            metadata
+                            |> fun m -> Metadata.enhanceWithManifest m labelStats exportDuration
+                            |> fun m -> Metadata.addErrorSummary m errorTracker
+                            |> fun m -> Metadata.addFormatInfo m finalLineState
 
                         let dataEndPosition = finalStream.Position
 
@@ -124,6 +171,7 @@ module Workflow =
                                 enhancedMetadata
                                 placeholderSize
                                 (JsonConfig.createWriterOptions ())
+                                finalLineState
                         with
                         | Error msg -> return Error(ExportError(sprintf "Failed to write metadata: %s" msg, None))
                         | Ok() ->
