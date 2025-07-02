@@ -1,0 +1,153 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Shell Scripting
+*.log
+/tmp
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Node 
+node_modules
+npm-debug.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# tools
+.claude/
+.claude*
+.openai/
+.openai*
+.gpt*
+.copilot/
+.copilot*
+.ai/
+.ai-*
+ai-config*
+.llm/
+.llm-*
+llm-config*
+*.prompt
+*.prompts
+.aider*
+.cursor*
+.continue/
+.codeium*
+.tabnine*
+*_claude.*
+*_gpt.*
+*_llm.*
+*_ai.*
+.chat/
+.chat-*
+chat-history*
+conversation-*
+.anthropic/
+anthropic-*
+.gemini/
+gemini-*
+.bard/
+bard-*
+AI_NOTES*
+LLM_NOTES*
+PROMPTS*
+prompts/
+.prompts/
+generated-by-*
+ai-generated*
+llm-generated*
+.aigitcommit*
+.gptcommit*
+.auto-gpt/
+.agent/
+.agents/
+.assistant/
+.assistants/
+
+.fake
+
+# Export outputs - generated files should not be committed
+/exports/
+*.jsonl
+
+# Working Docs (markdown files)
+*.md
+!README.md
+!VERSIONING.md
+
+# Distribution directory - contains built binaries
+/dist/*
+!/dist/README.md
+
+# Legacy subdirectories from old build process 
+/darwin-amd64/
+/darwin-arm64/
+/linux-amd64/
+/linux-arm64/
+/windows-amd64/
+/windows-arm64/
+
+# .NET build outputs
+bin/
+obj/
+publish/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.cache
+*.sln.docstates
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# User-specific files
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# Others
+.ionide/
+*~
+*.swp
+*.swo
+*.bak

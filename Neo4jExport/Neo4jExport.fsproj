@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Neo4jExport</RootNamespace>
+    <AssemblyName>neo4j-export</AssemblyName>
+    <!-- Version is inherited from Directory.Build.props -->
+    <Authors>Your Organization</Authors>
+    <Description>Mission-critical, production-grade tool for exporting Neo4j databases to JSONL format</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net6.0' Or '$(TargetFramework)' == 'net7.0' Or '$(TargetFramework)' == 'net8.0' Or '$(TargetFramework)' == 'net9.0'">
+    <DefineConstants>$(DefineConstants);NET6_0_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Neo4j.Driver" Version="5.28.1" />
+    <PackageReference Include="System.Text.Json" Version="9.0.6" />
+    <PackageReference Include="Fantomas.Core" Version="7.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Order matters in F# - files are compiled in the order listed -->
+    <Compile Include="src/Types.fs" />
+    <Compile Include="src/JsonHelpers.fs" />
+    <Compile Include="src/Constants.fs" />
+    <Compile Include="src/AppContext.fs" />
+    <Compile Include="src/Log.fs" />
+    <Compile Include="src/LabelStatsTracker.fs" />
+    <Compile Include="src/Security.fs" />
+    <Compile Include="src/Utils.fs" />
+    <Compile Include="src/Configuration.fs" />
+    <Compile Include="src/JsonConfig.fs" />
+    <Compile Include="src/MetadataWriter.fs" />
+    <Compile Include="src/Neo4j.fs" />
+    <Compile Include="src/Preflight.fs" />
+    <Compile Include="src/Metadata.fs" />
+    <Compile Include="src/Cleanup.fs" />
+    <Compile Include="src/Export.fs" />
+    <Compile Include="src/Monitoring.fs" />
+    <Compile Include="src/Workflow.fs" />
+    <Compile Include="src/SignalHandling.fs" />
+    <Compile Include="src/Program.fs" />
+  </ItemGroup>
+
+</Project>

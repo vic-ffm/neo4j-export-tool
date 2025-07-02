@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Export data
+*.jsonl
+export-data/
+
+# Documentation
+*.md
+LICENSE
+
+# Development files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
