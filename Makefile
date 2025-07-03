@@ -1,9 +1,7 @@
 .PHONY: help clean dist-clean binaries macos-apple-silicon macos-intel linux-amd64 linux-arm64 windows-x64 windows-arm64 docker-image
 
-# Read version from file
 VERSION := $(shell cat .version)
 
-# Default target
 help:
 	@echo "Neo4j Export Tool v$(VERSION) - Build Targets"
 	@echo ""
@@ -24,31 +22,25 @@ help:
 	@echo "  make clean          - Clean build artifacts"
 	@echo "  make dist-clean     - Clean distribution directory"
 
-# Create distribution directory
 dist:
 	@mkdir -p dist
 
-# Clean distribution directory
 dist-clean:
 	@echo "Cleaning distribution directory..."
 	@rm -rf dist/*
 
-# Clean all build artifacts
 clean: dist-clean
 	@echo "Cleaning build artifacts..."
 	@docker image prune -f
 
-# Build Docker image for running
 docker-image:
 	@echo "Building Docker image version $(VERSION)..."
 	@VERSION=$(VERSION) docker compose -f neo4j-export-runner.compose.yaml build
 
-# Run the export using Docker
 docker-run:
 	@echo "Running Neo4j export..."
 	@VERSION=$(VERSION) docker compose -f neo4j-export-runner.compose.yaml run --rm neo4j-export
 
-# Build macOS Apple Silicon binary
 macos-apple-silicon: dist
 	@echo "Building macOS Apple Silicon (M1/M2/M3) binary..."
 	@docker build -f Dockerfile.binaries --target macos-apple-silicon-export --output type=local,dest=./dist .
@@ -56,7 +48,6 @@ macos-apple-silicon: dist
 	@echo "✓ Binary created: dist/neo4j-export-darwin-arm64"
 	@ls -lh dist/neo4j-export-darwin-arm64
 
-# Build macOS Intel binary
 macos-intel: dist
 	@echo "Building macOS Intel binary..."
 	@docker build -f Dockerfile.binaries --target macos-intel-export --output type=local,dest=./dist .
@@ -64,7 +55,6 @@ macos-intel: dist
 	@echo "✓ Binary created: dist/neo4j-export-darwin-amd64"
 	@ls -lh dist/neo4j-export-darwin-amd64
 
-# Build Linux AMD64 binary
 linux-amd64: dist
 	@echo "Building Linux AMD64 binary..."
 	@docker build -f Dockerfile.binaries --target linux-amd64-export --output type=local,dest=./dist .
@@ -72,7 +62,6 @@ linux-amd64: dist
 	@echo "✓ Binary created: dist/neo4j-export-linux-amd64"
 	@ls -lh dist/neo4j-export-linux-amd64
 
-# Build Linux ARM64 binary
 linux-arm64: dist
 	@echo "Building Linux ARM64 binary..."
 	@docker build -f Dockerfile.binaries --target linux-arm64-export --output type=local,dest=./dist .
@@ -80,21 +69,18 @@ linux-arm64: dist
 	@echo "✓ Binary created: dist/neo4j-export-linux-arm64"
 	@ls -lh dist/neo4j-export-linux-arm64
 
-# Build Windows x64 binary
 windows-x64: dist
 	@echo "Building Windows x64 binary..."
 	@docker build -f Dockerfile.binaries --target windows-x64-export --output type=local,dest=./dist .
 	@echo "✓ Binary created: dist/neo4j-export-windows-amd64.exe"
 	@ls -lh dist/neo4j-export-windows-amd64.exe
 
-# Build Windows ARM64 binary
 windows-arm64: dist
 	@echo "Building Windows ARM64 binary..."
 	@docker build -f Dockerfile.binaries --target windows-arm64-export --output type=local,dest=./dist .
 	@echo "✓ Binary created: dist/neo4j-export-windows-arm64.exe"
 	@ls -lh dist/neo4j-export-windows-arm64.exe
 
-# Build all platform binaries
 binaries: dist
 	@echo "Building all platform binaries..."
 	@docker build -f Dockerfile.binaries --target all-binaries --output type=local,dest=./dist .

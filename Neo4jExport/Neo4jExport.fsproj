@@ -43,7 +43,22 @@
     <Compile Include="src/Preflight.fs" />
     <Compile Include="src/Metadata.fs" />
     <Compile Include="src/Cleanup.fs" />
+    
+    <!-- Export module hierarchy -->
+    <Compile Include="src/Export/Types.fs" />
+    <Compile Include="src/Export/Utils.fs" />
+    <Compile Include="src/Export/Serialization/Context.fs" />
+    <Compile Include="src/Export/Serialization/Primitives.fs" />
+    <Compile Include="src/Export/Serialization/Temporal.fs" />
+    <Compile Include="src/Export/Serialization/Spatial.fs" />
+    <Compile Include="src/Export/Serialization/Collections.fs" />
+    <Compile Include="src/Export/Serialization/GraphElements.fs" />
+    <Compile Include="src/Export/Serialization/Path.fs" />
+    <Compile Include="src/Export/Serialization/Engine.fs" />
+    <Compile Include="src/Export/BatchProcessing.fs" />
+    <Compile Include="src/Export/Core.fs" />
     <Compile Include="src/Export.fs" />
+    
     <Compile Include="src/Monitoring.fs" />
     <Compile Include="src/Workflow.fs" />
     <Compile Include="src/SignalHandling.fs" />

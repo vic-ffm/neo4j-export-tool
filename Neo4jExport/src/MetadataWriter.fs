@@ -1,3 +1,25 @@
+// MIT License
+//
+// Copyright (c) 2025-present State Government of Victoria
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 namespace Neo4jExport
 
 open System
@@ -7,7 +29,6 @@ open System.IO
 
 module MetadataWriter =
 
-    /// Write metadata directly using JsonValue writer for optimal performance
     let writeMetadataDirectly
         (stream: Stream)
         (metadata: FullMetadata)
@@ -23,17 +44,14 @@ module MetadataWriter =
 
         writer.WriteStartObject()
 
-        // Write format_version at root level
         writer.WriteString("format_version", metadata.FormatVersion)
 
-        // Export metadata
         writer.WritePropertyName("export_metadata")
         writer.WriteStartObject()
         writer.WriteString("export_id", metadata.ExportMetadata.ExportId.ToString())
         writer.WriteString("export_timestamp_utc", metadata.ExportMetadata.ExportTimestampUtc.ToString("O"))
         writer.WriteString("export_mode", metadata.ExportMetadata.ExportMode)
 
-        // Format info
         match metadata.ExportMetadata.Format with
         | Some format ->
             writer.WritePropertyName("format")
@@ -41,7 +59,6 @@ module MetadataWriter =
             writer.WriteString("type", format.Type)
             writer.WriteNumber("metadata_line", format.MetadataLine)
 
-            // Dynamically write all record type start lines
             for KeyValue(recordType, startLine) in lineState.RecordTypeStartLines do
                 writer.WriteNumber(sprintf "%s_start_line" recordType, startLine)
 
@@ -50,25 +67,21 @@ module MetadataWriter =
 
         writer.WriteEndObject()
 
-        // Producer (renamed from export_script)
         writer.WritePropertyName("producer")
         JsonSerializer.Serialize(writer, metadata.Producer)
 
-        // Source system
         writer.WritePropertyName("source_system")
         writer.WriteStartObject()
         writer.WriteString("type", metadata.SourceSystem.Type)
         writer.WriteString("version", metadata.SourceSystem.Version)
         writer.WriteString("edition", metadata.SourceSystem.Edition)
 
-        // Database
         writer.WritePropertyName("database")
         writer.WriteStartObject()
         writer.WriteString("name", metadata.SourceSystem.Database.Name)
         writer.WriteEndObject()
         writer.WriteEndObject()
 
-        // Error summary
         match metadata.ErrorSummary with
         | Some errorSummary ->
             writer.WritePropertyName("error_summary")
@@ -79,11 +92,9 @@ module MetadataWriter =
             writer.WriteEndObject()
         | None -> ()
 
-        // Database statistics
         writer.WritePropertyName("database_statistics")
         JsonHelpers.writeJsonValue writer (JObject metadata.DatabaseStatistics)
 
-        // Record types
         writer.WritePropertyName("supported_record_types")
         writer.WriteStartArray()
 
@@ -114,15 +125,12 @@ module MetadataWriter =
 
         writer.WriteEndArray()
 
-        // Environment
         writer.WritePropertyName("environment")
         JsonSerializer.Serialize(writer, metadata.Environment)
 
-        // Security
         writer.WritePropertyName("security")
         JsonSerializer.Serialize(writer, metadata.Security)
 
-        // Compatibility
         writer.WritePropertyName("compatibility")
         writer.WriteStartObject()
         writer.WriteString("minimum_reader_version", metadata.Compatibility.MinimumReaderVersion)
@@ -136,7 +144,6 @@ module MetadataWriter =
         writer.WriteString("breaking_change_version", metadata.Compatibility.BreakingChangeVersion)
         writer.WriteEndObject()
 
-        // Compression hints
         writer.WritePropertyName("compression")
         writer.WriteStartObject()
         writer.WriteString("recommended", metadata.Compression.Recommended)
@@ -148,7 +155,6 @@ module MetadataWriter =
 
         writer.WriteEndArray()
 
-        // Always write expected_ratio (null if None)
         writer.WritePropertyName("expected_ratio")
 
         match metadata.Compression.ExpectedRatio with
@@ -162,11 +168,9 @@ module MetadataWriter =
         writer.WritePropertyName("database_schema")
         JsonHelpers.writeJsonValue writer (JObject metadata.DatabaseSchema)
 
-        // Export manifest
         writer.WritePropertyName("export_manifest")
         JsonSerializer.Serialize(writer, metadata.ExportManifest)
 
-        // Update _reserved without version
         match metadata.Reserved with
         | Some reserved ->
             writer.WritePropertyName("_reserved")

@@ -1,14 +1,10 @@
 #!/bin/bash
-# Build script for native compilation on the host machine
-# This ensures binaries are placed in the /dist directory consistently
 
 set -e
 
-# Detect the current platform
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
-# Map architecture names
 case "$ARCH" in
     x86_64)
         ARCH="amd64"
@@ -24,7 +20,6 @@ case "$ARCH" in
         ;;
 esac
 
-# Map OS names for runtime identifier
 case "$OS" in
     darwin)
         OS_NAME="darwin"
@@ -47,7 +42,6 @@ case "$OS" in
         ;;
 esac
 
-# Construct runtime identifier
 RID="${RUNTIME_OS}-${RUNTIME_ARCH}"
 OUTPUT_NAME="neo4j-export-${OS_NAME}-${ARCH}"
 if [ "$OS_NAME" = "windows" ]; then
@@ -57,10 +51,8 @@ fi
 echo "Building for platform: $RID"
 echo "Output binary: dist/$OUTPUT_NAME"
 
-# Create dist directory if it doesn't exist
 mkdir -p dist
 
-# Build the project
 dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -c Release \
     -r "$RID" \
@@ -71,13 +63,10 @@ dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -p:DebugType=embedded \
     -o ./publish-temp
 
-# Move the binary to dist with the correct name
 mv "./publish-temp/$BINARY_NAME" "./dist/$OUTPUT_NAME"
 
-# Clean up temporary directory
 rm -rf ./publish-temp
 
-# Make executable (not needed on Windows)
 if [ "$OS_NAME" != "windows" ]; then
     chmod +x "./dist/$OUTPUT_NAME"
 fi

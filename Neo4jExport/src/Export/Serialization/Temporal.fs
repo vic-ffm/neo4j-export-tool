@@ -20,27 +20,27 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-namespace Neo4jExport
+module Neo4jExport.SerializationTemporal
 
-open Neo4jExport.ExportCore
+open System
+open System.Text.Json
+open Neo4j.Driver
 
-/// Core export functionality for streaming Neo4j data to JSONL format.
-/// Uses JavaScriptEncoder.UnsafeRelaxedJsonEscaping to preserve data
-/// exactly as stored in Neo4j, without HTML escaping that would transform data.
-module Export =
-    let createLabelStatsTracker () = LabelStatsTracker.create ()
+let serializeTemporal (writer: Utf8JsonWriter) (value: obj) =
+    let str =
+        match value with
+        | :? LocalDate as ld -> ld.ToString()
+        | :? LocalTime as lt -> lt.ToString()
+        | :? LocalDateTime as ldt -> ldt.ToString()
+        | :? ZonedDateTime as zdt -> zdt.ToString()
+        | :? Duration as dur -> dur.ToString()
+        | :? OffsetTime as ot -> ot.ToString()
+        | _ -> failwith "Not a temporal type"
 
-    let getLabelStatsList tracker =
-        LabelStatsTracker.finalizeAndGetAllStats tracker
-        |> List.sortBy (fun s -> s.Label)
+    writer.WriteStringValue str
 
-    let exportNodesUnified =
-        ExportCore.exportNodesUnified
+let serializeDateTime (writer: Utf8JsonWriter) (dt: DateTime) =
+    writer.WriteStringValue(dt.ToString "O")
 
-    let exportRelationships =
-        ExportCore.exportRelationships
-
-    let exportErrors = ExportCore.exportErrors
-
-    let finalizeExport =
-        ExportCore.finalizeExport
+let serializeDateTimeOffset (writer: Utf8JsonWriter) (dto: DateTimeOffset) =
+    writer.WriteStringValue(dto.ToString "O")

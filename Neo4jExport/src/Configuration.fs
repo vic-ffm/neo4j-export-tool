@@ -1,11 +1,31 @@
+// MIT License
+//
+// Copyright (c) 2025-present State Government of Victoria
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 namespace Neo4jExport
 
 open System
 open Constants
 
-/// Configuration validation and environment variable handling
 module Configuration =
-    /// Safe parsing helpers to prevent FormatException crashes
     module private SafeParsing =
         let tryParseInt64 (name: string) (value: string) : Result<int64, string> =
             match Int64.TryParse(value) with
@@ -27,13 +47,11 @@ module Configuration =
             | "0" -> Ok false
             | _ -> Error(sprintf "%s must be a valid boolean (true/false, yes/no, 1/0) (got: '%s')" name value)
 
-    /// Helper to extract Ok value when we know all errors have been checked
     let private getOkValue =
         function
         | Ok value -> value
         | Error _ -> failwith "Internal error: attempted to extract Ok value from Error result"
 
-    /// Convert AppError to user-friendly string message
     let private appErrorToString =
         function
         | ConfigError msg -> msg
@@ -69,8 +87,6 @@ module Configuration =
             Result.Error(sprintf "Invalid URI: %s" ex.Message)
 
     let private validateOutputDirectory path =
-        // Validates path syntax without restricting base directory.
-        // OS handles permissions - we only ensure the path is well-formed.
         match Security.validatePathSyntax path with
         | Result.Error e -> Result.Error e
         | Result.Ok validPath ->
@@ -78,7 +94,7 @@ module Configuration =
             | Result.Error e -> Result.Error e
             | Result.Ok() -> Result.Ok validPath
 
-    /// Generates descriptive filename including database info and export metadata
+    /// Generates descriptive filename: [dbname]_[timestamp]_[nodes]n_[rels]r_[id].jsonl
     let generateMetadataFilename (outputDir: string) (metadata: FullMetadata) =
         let dbName =
             metadata.SourceSystem.Database.Name
@@ -113,7 +129,6 @@ module Configuration =
 
         System.IO.Path.Combine(outputDir, filename)
 
-    /// Loads configuration from environment variables with validation
     let getConfig () : Result<ExportConfig, AppError> =
         try
             let uriStr =
@@ -193,6 +208,61 @@ module Configuration =
                     Error(sprintf "JSON_BUFFER_SIZE_KB must be between 1 and 1024 KB (got: %d)" size)
                 | result -> result
 
+            let maxPathLength =
+                SafeParsing.tryParseInt64
+                    Env.MAX_PATH_LENGTH
+                    (Utils.getEnvVar Env.MAX_PATH_LENGTH (string Defaults.MaxPathLength))
+
+            let pathFullModeLimit =
+                SafeParsing.tryParseInt64
+                    Env.PATH_FULL_MODE_LIMIT
+                    (Utils.getEnvVar Env.PATH_FULL_MODE_LIMIT (string Defaults.PathFullModeLimit))
+
+            let pathCompactModeLimit =
+                SafeParsing.tryParseInt64
+                    Env.PATH_COMPACT_MODE_LIMIT
+                    (Utils.getEnvVar Env.PATH_COMPACT_MODE_LIMIT (string Defaults.PathCompactModeLimit))
+
+            let pathPropertyDepth =
+                SafeParsing.tryParseInt
+                    Env.PATH_PROPERTY_DEPTH
+                    (Utils.getEnvVar Env.PATH_PROPERTY_DEPTH (string Defaults.PathPropertyDepth))
+
+            let maxNestedDepth =
+                SafeParsing.tryParseInt
+                    Env.MAX_NESTED_DEPTH
+                    (Utils.getEnvVar Env.MAX_NESTED_DEPTH (string Defaults.MaxNestedDepth))
+
+            let nestedShallowModeDepth =
+                SafeParsing.tryParseInt
+                    Env.NESTED_SHALLOW_MODE_DEPTH
+                    (Utils.getEnvVar Env.NESTED_SHALLOW_MODE_DEPTH (string Defaults.NestedShallowModeDepth))
+
+            let nestedReferenceModeDepth =
+                SafeParsing.tryParseInt
+                    Env.NESTED_REFERENCE_MODE_DEPTH
+                    (Utils.getEnvVar Env.NESTED_REFERENCE_MODE_DEPTH (string Defaults.NestedReferenceModeDepth))
+
+            let maxCollectionItems =
+                SafeParsing.tryParseInt
+                    Env.MAX_COLLECTION_ITEMS
+                    (Utils.getEnvVar Env.MAX_COLLECTION_ITEMS (string Defaults.MaxCollectionItems))
+
+            let maxLabelsPerNode =
+                SafeParsing.tryParseInt
+                    Env.MAX_LABELS_PER_NODE
+                    (Utils.getEnvVar Env.MAX_LABELS_PER_NODE (string Defaults.MaxLabelsPerNode))
+
+            let maxLabelsInReferenceMode =
+                SafeParsing.tryParseInt
+                    Env.MAX_LABELS_IN_REFERENCE_MODE
+                    (Utils.getEnvVar Env.MAX_LABELS_IN_REFERENCE_MODE (string Defaults.MaxLabelsInReferenceMode))
+
+            let maxLabelsInPathCompact =
+                SafeParsing.tryParseInt
+                    Env.MAX_LABELS_IN_PATH_COMPACT
+                    (Utils.getEnvVar Env.MAX_LABELS_IN_PATH_COMPACT (string Defaults.MaxLabelsInPathCompact))
+
             let allValidationResults =
                 [ uriResult
                   |> Result.map (fun _ -> ())
@@ -235,6 +305,39 @@ module Configuration =
                   |> Result.mapError id
                   jsonBufferSizeKb
                   |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  maxPathLength
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  pathFullModeLimit
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  pathCompactModeLimit
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  pathPropertyDepth
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  maxNestedDepth
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  nestedShallowModeDepth
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  nestedReferenceModeDepth
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  maxCollectionItems
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  maxLabelsPerNode
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  maxLabelsInReferenceMode
+                  |> Result.map (fun _ -> ())
+                  |> Result.mapError id
+                  maxLabelsInPathCompact
+                  |> Result.map (fun _ -> ())
                   |> Result.mapError id ]
 
             let errors =
@@ -261,7 +364,18 @@ module Configuration =
                       ValidateJsonOutput = getOkValue validateJson
                       AllowInsecure = getOkValue allowInsecure
                       BatchSize = getOkValue batchSize
-                      JsonBufferSizeKb = getOkValue jsonBufferSizeKb }
+                      JsonBufferSizeKb = getOkValue jsonBufferSizeKb
+                      MaxPathLength = getOkValue maxPathLength
+                      PathFullModeLimit = getOkValue pathFullModeLimit
+                      PathCompactModeLimit = getOkValue pathCompactModeLimit
+                      PathPropertyDepth = getOkValue pathPropertyDepth
+                      MaxNestedDepth = getOkValue maxNestedDepth
+                      NestedShallowModeDepth = getOkValue nestedShallowModeDepth
+                      NestedReferenceModeDepth = getOkValue nestedReferenceModeDepth
+                      MaxCollectionItems = getOkValue maxCollectionItems
+                      MaxLabelsPerNode = getOkValue maxLabelsPerNode
+                      MaxLabelsInReferenceMode = getOkValue maxLabelsInReferenceMode
+                      MaxLabelsInPathCompact = getOkValue maxLabelsInPathCompact }
             | errors -> Result.Error(ConfigError(String.concat "; " errors))
         with ex ->
             Result.Error(ConfigError(sprintf "Invalid configuration: %s" ex.Message))

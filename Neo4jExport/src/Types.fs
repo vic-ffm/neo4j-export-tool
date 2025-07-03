@@ -1,10 +1,67 @@
+// MIT License
+//
+// Copyright (c) 2025-present State Government of Victoria
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 namespace Neo4jExport
 
 open System
 open System.Collections.Generic
 open System.Text.Json.Serialization
+open Neo4j.Driver
 
 /// Core domain types for Neo4j export operations
+
+// Serialization level types - no strings!
+[<Struct>]
+type PathSerializationLevel =
+    | Full
+    | Compact
+    | IdsOnly
+
+[<Struct>]
+type NestedSerializationLevel =
+    | Deep
+    | Shallow
+    | Reference
+
+type SerializationDepth = private SerializationDepth of int
+
+module SerializationDepth =
+    let zero = SerializationDepth 0
+    let increment (SerializationDepth d) = SerializationDepth(d + 1)
+    let value (SerializationDepth d) = d
+    let exceedsLimit limit (SerializationDepth d) = d >= limit
+
+type SerializationError =
+    | DepthExceeded of currentDepth: int * maxDepth: int
+    | PathTooLong of length: int64 * maxLength: int64
+    | CircularReference of nodeId: int64
+    | PropertySerializationFailed of key: string * error: string
+    | InvalidValue of message: string
+
+type GraphElement =
+    | Node of INode
+    | Relationship of IRelationship
+    | Path of IPath
+
 /// For tracking in-progress exports
 type ExportProgress =
     { RecordsProcessed: int64
@@ -48,9 +105,28 @@ type ExportConfig =
       ValidateJsonOutput: bool
       AllowInsecure: bool
       BatchSize: int
-      JsonBufferSizeKb: int }
+      JsonBufferSizeKb: int
 
-/// Discriminated union representing all possible application errors
+      // Path serialization thresholds
+      MaxPathLength: int64
+      PathFullModeLimit: int64
+      PathCompactModeLimit: int64
+      PathPropertyDepth: int
+
+      // Nested element thresholds
+      MaxNestedDepth: int
+      NestedShallowModeDepth: int
+      NestedReferenceModeDepth: int
+
+      // Collection limits
+      MaxCollectionItems: int
+
+      // Label truncation limits
+      MaxLabelsPerNode: int
+      MaxLabelsInReferenceMode: int
+      MaxLabelsInPathCompact: int }
+
+/// All possible application errors
 type AppError =
     | ConfigError of message: string
     | ConnectionError of message: string * exn: exn option
@@ -72,13 +148,11 @@ type ApplicationContext =
 
     interface IDisposable with
         member this.Dispose() =
-            // Dispose the cancellation token source
             try
                 this.CancellationTokenSource.Dispose()
             with ex ->
                 eprintfn "[WARN] Failed to dispose CancellationTokenSource: %s" ex.Message
 
-            // Clean up temp files
             for tempFile in this.TempFiles do
                 try
                     if System.IO.File.Exists(tempFile) then
@@ -86,7 +160,6 @@ type ApplicationContext =
                 with ex ->
                     eprintfn "[WARN] Failed to delete temporary file '%s': %s" tempFile ex.Message
 
-            // Terminate and dispose active processes
             for proc in this.ActiveProcesses do
                 try
                     if not proc.HasExited then
@@ -240,10 +313,8 @@ type ErrorRecord =
       Message: string
       [<JsonPropertyName("details")>]
       Details: IDictionary<string, JsonValue> option
-      [<JsonPropertyName("node_id")>]
-      NodeId: int64 option
-      [<JsonPropertyName("relationship_id")>]
-      RelationshipId: int64 option }
+      [<JsonPropertyName("element_id")>]
+      ElementId: string option }
 
 /// Immutable state for tracking line numbers functionally
 type LineTrackingState =
@@ -278,14 +349,12 @@ type ErrorTrackingState =
 type ErrorTrackingMessage =
     | AddError of
         message: string *
-        nodeId: int64 option *
-        relId: int64 option *
+        elementId: string option *
         details: IDictionary<string, JsonValue> option *
         AsyncReplyChannel<unit>
     | AddWarning of
         message: string *
-        nodeId: int64 option *
-        relId: int64 option *
+        elementId: string option *
         details: IDictionary<string, JsonValue> option *
         AsyncReplyChannel<unit>
     | IncrementLine of AsyncReplyChannel<unit>
@@ -302,10 +371,10 @@ type ResourceState =
 
 type FullMetadata =
     { [<JsonPropertyName("format_version")>]
-      FormatVersion: string // Move to root level
+      FormatVersion: string
       [<JsonPropertyName("export_metadata")>]
       ExportMetadata: ExportMetadata
-      [<JsonPropertyName("producer")>] // Rename from export_script
+      [<JsonPropertyName("producer")>]
       Producer: ExportScriptMetadata
       [<JsonPropertyName("source_system")>]
       SourceSystem: SourceSystemMetadata

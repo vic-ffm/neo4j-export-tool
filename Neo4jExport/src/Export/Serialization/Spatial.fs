@@ -20,27 +20,20 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-namespace Neo4jExport
+module Neo4jExport.SerializationSpatial
 
-open Neo4jExport.ExportCore
+open System
+open System.Text.Json
+open Neo4j.Driver
 
-/// Core export functionality for streaming Neo4j data to JSONL format.
-/// Uses JavaScriptEncoder.UnsafeRelaxedJsonEscaping to preserve data
-/// exactly as stored in Neo4j, without HTML escaping that would transform data.
-module Export =
-    let createLabelStatsTracker () = LabelStatsTracker.create ()
+let serializePoint (writer: Utf8JsonWriter) (pt: Point) =
+    writer.WriteStartObject()
+    writer.WriteString("type", "Point")
+    writer.WriteNumber("srid", pt.SrId)
+    writer.WriteNumber("x", pt.X)
+    writer.WriteNumber("y", pt.Y)
 
-    let getLabelStatsList tracker =
-        LabelStatsTracker.finalizeAndGetAllStats tracker
-        |> List.sortBy (fun s -> s.Label)
+    if not (Double.IsNaN pt.Z) then
+        writer.WriteNumber("z", pt.Z)
 
-    let exportNodesUnified =
-        ExportCore.exportNodesUnified
-
-    let exportRelationships =
-        ExportCore.exportRelationships
-
-    let exportErrors = ExportCore.exportErrors
-
-    let finalizeExport =
-        ExportCore.finalizeExport
+    writer.WriteEndObject()

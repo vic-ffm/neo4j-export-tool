@@ -1,3 +1,25 @@
+// MIT License
+//
+// Copyright (c) 2025-present State Government of Victoria
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 namespace Neo4jExport
 
 open System
@@ -5,7 +27,6 @@ open System.IO
 open System.Globalization
 open Neo4j.Driver
 
-// Computation expression for async Result workflows
 type AsyncResultBuilder() =
     member _.Return(x) = async { return Ok x }
     member _.ReturnFrom(x) = x
@@ -21,24 +42,16 @@ type AsyncResultBuilder() =
 
 /// Memory estimation configuration
 type MemoryEstimationConfig =
-    {
-        /// Average size per record in bytes
-        AverageRecordSize: int64
-        /// Overhead multiplier for processing buffers
-        ProcessingOverheadMultiplier: float
-        /// Minimum memory reservation in bytes
-        MinimumReservation: int64
-    }
+    { AverageRecordSize: int64
+      ProcessingOverheadMultiplier: float
+      MinimumReservation: int64 }
 
-/// Pre-export validation checks
 module Preflight =
     let private asyncResult =
         AsyncResultBuilder()
 
-    /// Linux-specific memory detection
     let private getLinuxAvailableMemory () =
         try
-            // Parse /proc/meminfo for MemAvailable
             let lines =
                 System.IO.File.ReadAllLines("/proc/meminfo")
 
@@ -48,13 +61,12 @@ module Preflight =
 
             match availableLine with
             | Some line ->
-                // Parse "MemAvailable:    1234567 kB"
                 let parts =
                     line.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
 
                 if parts.Length >= 2 then
                     let kbValue = int64 parts.[1]
-                    kbValue * 1024L // Convert KB to bytes
+                    kbValue * 1024L
                 else
                     Constants.Defaults.ConservativeMemoryFallback
             | None ->
@@ -64,7 +76,6 @@ module Preflight =
             Log.warn (sprintf "Failed to parse /proc/meminfo: %s" ex.Message)
             Constants.Defaults.ConservativeMemoryFallback
 
-    /// Platform-specific memory detection as fallback
     let private getPlatformSpecificMemory () =
         try
             if
@@ -72,25 +83,22 @@ module Preflight =
                     System.Runtime.InteropServices.OSPlatform.Linux
                 )
             then
-                // Linux: Parse /proc/meminfo
                 getLinuxAvailableMemory ()
             elif
                 System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
                     System.Runtime.InteropServices.OSPlatform.Windows
                 )
             then
-                // Windows: Memory detection not implemented
                 Log.warn "Memory detection not implemented for Windows. Please monitor memory usage manually."
-                0L // Return 0 to trigger insufficient memory error
+                0L
             else
-                // macOS or other: Conservative estimate
                 Log.warn "Platform-specific memory detection not available, using conservative estimate"
                 Constants.Defaults.ConservativeMemoryFallback
         with ex ->
             Log.warn (sprintf "Platform detection failed: %s" ex.Message)
             Constants.Defaults.ConservativeMemoryFallback
 
-    /// Platform-specific helper to get available system memory
+    /// Gets available system memory using GC info or platform-specific methods
     let private getAvailableSystemMemory () =
         try
             let memInfo = GC.GetGCMemoryInfo()
@@ -98,31 +106,23 @@ module Preflight =
             let availableMemory =
                 memInfo.TotalAvailableMemoryBytes
 
-            // Log the actual memory information for debugging
             Log.debug (sprintf "System memory info - Total available: %s" (Utils.formatBytes availableMemory))
 
             availableMemory
         with
         | :? NotSupportedException as ex ->
-            // This API might not be supported on all platforms
             Log.warn (sprintf "GC memory info not supported on this platform: %s" ex.Message)
-            // Fall back to platform-specific implementation
             getPlatformSpecificMemory ()
         | ex ->
-            // Log specific error before falling back
             Log.warn (sprintf "Failed to get system memory info: %s" ex.Message)
-            // Conservative fallback
             Constants.Defaults.ConservativeMemoryFallback
 
-    /// Default memory estimation configuration using Constants
     let private defaultMemoryEstimationConfig =
         { AverageRecordSize = Constants.Defaults.AverageRecordSizeBytes
           ProcessingOverheadMultiplier = Constants.Defaults.ProcessingOverheadMultiplier
           MinimumReservation = Constants.Defaults.MinimumMemoryReservation }
 
-    /// Estimates memory usage for the export operation
     let private estimateExportMemoryUsage (config: ExportConfig) =
-        // Allow configuration override via environment variables
         let estimationConfig =
             let getEnvInt64 name defaultValue =
                 match Environment.GetEnvironmentVariable(name) with
@@ -149,7 +149,6 @@ module Preflight =
               MinimumReservation =
                 getEnvInt64 Constants.Env.MinMemoryReservation defaultMemoryEstimationConfig.MinimumReservation }
 
-        // Calculate based on batch size and configuration
         let batchMemory =
             int64 config.BatchSize
             * estimationConfig.AverageRecordSize
@@ -163,7 +162,6 @@ module Preflight =
         let estimated =
             max withOverhead estimationConfig.MinimumReservation
 
-        // Log the estimation details for transparency
         Log.debug (
             sprintf
                 "Memory estimation - Batch size: %d, Avg record: %s, Overhead: %.1fx, Estimated: %s"
@@ -287,8 +285,6 @@ module Preflight =
                     max gcMemory workingSetBytes
 
                 if currentMemory > maxMemoryBytes then
-                    // #ATTN_RYAN_TO_NOTE: Removed aggressive GC.Collect per analysis
-                    // If memory is already over limit, fail the check
                     return
                         Error(
                             MemoryError(
@@ -345,11 +341,10 @@ module Preflight =
             | Error e -> return Error e
         }
 
-    /// Initialize file system before export (separate from checks)
+    /// Creates output directory if it doesn't exist
     let initializeFileSystem (config: ExportConfig) =
         async {
             try
-                // Create output directory if it doesn't exist
                 if not (Directory.Exists(config.OutputDirectory)) then
                     Log.info (sprintf "Creating output directory: %s" config.OutputDirectory)
 
@@ -368,7 +363,7 @@ module Preflight =
                     )
         }
 
-    /// Run all preflight checks in sequence
+    /// Runs all preflight checks
     let runAllChecks
         (context: ApplicationContext)
         (session: SafeSession)

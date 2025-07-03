@@ -1,3 +1,25 @@
+// MIT License
+//
+// Copyright (c) 2025-present State Government of Victoria
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 namespace Neo4jExport
 
 open System
@@ -7,7 +29,7 @@ open System.Threading
 open Neo4j.Driver
 
 
-/// Thread-safe wrapper that prevents concurrent session usage
+/// Prevents concurrent session usage. Neo4j sessions are not thread-safe.
 type SafeSession(session: IAsyncSession) =
     let inUse = ref 0
 
@@ -36,10 +58,9 @@ type SafeSession(session: IAsyncSession) =
     interface IDisposable with
         member _.Dispose() = session.Dispose()
 
-/// Neo4j database interaction with resilience patterns
+/// Neo4j database operations with circuit breaker and retry logic
 module Neo4j =
     module private Validation =
-        /// Validation combinators
         let notEmpty fieldName value =
             if String.IsNullOrWhiteSpace(value) |> not then
                 Ok value
@@ -52,7 +73,6 @@ module Neo4j =
             else
                 Error(ConfigError(sprintf "%s must be positive" fieldName))
 
-        /// Composed validators
         let validateQuery = notEmpty "Query"
 
         let validateMaxResults =
@@ -63,28 +83,26 @@ module Neo4j =
         | Open of DateTime
         | HalfOpen
 
-    /// Opaque circuit breaker handle for thread-safe resilience
+    /// Circuit breaker for handling transient failures
     type CircuitBreaker =
         private
             { mutable State: CircuitState
               mutable ConsecutiveFailures: int
-              mutable SuccessesInHalfOpen: int // ADD THIS
+              mutable SuccessesInHalfOpen: int
               Threshold: int
               Duration: TimeSpan
-              RequiredSuccesses: int // ADD THIS
-              Lock: obj } // For thread-safe state mutations
+              RequiredSuccesses: int
+              Lock: obj }
 
-    /// Creates a new circuit breaker instance
     let createCircuitBreaker threshold duration =
         { State = Closed
           ConsecutiveFailures = 0
           SuccessesInHalfOpen = 0
           Threshold = threshold
           Duration = duration
-          RequiredSuccesses = 3 // Require 3 successes in half-open
+          RequiredSuccesses = 3
           Lock = obj () }
 
-    /// Thread-safe random number generator for jitter
     module private RandomGen =
         let private random = Random()
         let private randomLock = obj ()
@@ -92,7 +110,6 @@ module Neo4j =
         let next minValue maxValue =
             lock randomLock (fun () -> random.Next(minValue, maxValue))
 
-    /// Executes operations with circuit breaker pattern and exponential backoff retry
     let private executeWithResilience<'T> (breaker: CircuitBreaker) (config: ExportConfig) (operation: Async<'T>) =
         async {
             let checkCircuitBreaker () =
@@ -102,7 +119,7 @@ module Neo4j =
                         raise (InvalidOperationException("Circuit breaker is open - too many recent failures"))
                     | Open _ ->
                         breaker.State <- HalfOpen
-                        breaker.SuccessesInHalfOpen <- 0 // ADD THIS
+                        breaker.SuccessesInHalfOpen <- 0
                         Log.info "Circuit breaker entering half-open state"
                     | _ -> ())
 
@@ -180,7 +197,7 @@ module Neo4j =
             return! attemptWithRetry 0
         }
 
-    /// Executes a Neo4j query with streaming results and comprehensive resilience
+    /// Executes a Neo4j query with streaming results
     let executeQueryStreaming
         (session: SafeSession)
         (breaker: CircuitBreaker)
@@ -198,7 +215,6 @@ module Neo4j =
                             let! cursor = session.RunAsync(query)
 
                             try
-                                // Use while loop for constant memory usage with large datasets
                                 let mutable continueProcessing = true
 
                                 while continueProcessing do
@@ -209,34 +225,29 @@ module Neo4j =
                                     else
                                         continueProcessing <- false
 
-                                // Explicitly consume the cursor for proper cleanup and to get result summary
                                 let! _ = cursor.ConsumeAsync() |> Async.AwaitTask
                                 return ()
                             with ex ->
-                                // On exception, ensure cursor is consumed to free server resources
                                 try
                                     do!
                                         cursor.ConsumeAsync()
                                         |> Async.AwaitTask
                                         |> Async.Ignore
                                 with _ ->
-                                    () // Ignore any errors during cleanup
+                                    ()
 
-                                raise ex // Re-raise the original exception
+                                raise ex
                         })
 
                 return Ok result
             with
             | :? AuthenticationException as ex ->
-                // Use ConnectionError to preserve exception details
                 return Error(ConnectionError(sprintf "Authentication failed: %s" ex.Message, Some ex))
             | :? ClientException as ex when ex.Message.Contains("Neo.ClientError.Security") ->
-                // Use ConnectionError to preserve exception details
                 return Error(ConnectionError("Authentication failed: Invalid credentials", Some ex))
             | :? ClientException as ex when ex.Message.Contains("Neo.ClientError.Procedure.ProcedureNotFound") ->
                 return Error(QueryError(query, "Procedure not found", Some ex))
             | :? TimeoutException as ex ->
-                // Use QueryError to preserve exception details for timeout
                 return
                     Error(
                         QueryError(
@@ -248,7 +259,7 @@ module Neo4j =
             | ex -> return Error(QueryError(query, ex.Message, Some ex))
         }
 
-    /// Executes a Neo4j query and returns results as a list - ONLY for small result sets
+    /// Executes a query and returns results as a list. Use only for small result sets.
     let executeQueryList
         (session: SafeSession)
         (breaker: CircuitBreaker)
@@ -289,7 +300,6 @@ module Neo4j =
                         return Ok(results |> List.ofSeq)
                 | Error e -> return Error e
             | Error e1, Error e2 ->
-                // Both validations failed - combine error messages
                 let combinedMessage =
                     match e1, e2 with
                     | QueryError(_, msg1, _), QueryError(_, msg2, _) ->

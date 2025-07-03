@@ -1,3 +1,25 @@
+// MIT License
+//
+// Copyright (c) 2025-present State Government of Victoria
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 namespace Neo4jExport
 
 open System
@@ -5,7 +27,6 @@ open System.Collections.Generic
 open System.IO
 open Neo4j.Driver
 
-/// Metadata collection for export manifest
 module Metadata =
     [<Literal>]
     let private FORMAT_VERSION = "1.0.0"
@@ -22,7 +43,7 @@ module Metadata =
                         config
                         "CALL dbms.components() YIELD name, versions, edition WHERE name = 'Neo4j Kernel' RETURN versions[0] as version, edition"
                         (fun record -> record.["version"].As<string>(), record.["edition"].As<string>())
-                        1 // Max 1 result expected
+                        1
 
                 match result with
                 | Ok records ->
@@ -30,9 +51,6 @@ module Metadata =
                     | [ (version, edition) ] ->
                         info.["version"] <- JString version
                         info.["edition"] <- JString edition
-                    | [] ->
-                        info.["version"] <- JString "unknown"
-                        info.["edition"] <- JString "unknown"
                     | _ ->
                         info.["version"] <- JString "unknown"
                         info.["edition"] <- JString "unknown"
@@ -53,16 +71,15 @@ module Metadata =
                         config
                         "CALL db.info() YIELD name RETURN name"
                         (fun record -> record.["name"].As<string>())
-                        1 // Max 1 result expected
+                        1
 
                 match dbNameResult with
                 | Ok records ->
                     match records with
                     | [ name ] -> info.["database_name"] <- JString name
-                    | [] ->
+                    | _ ->
                         Log.warn "Could not retrieve database name, using default"
                         info.["database_name"] <- JString "neo4j"
-                    | _ -> info.["database_name"] <- JString "neo4j"
                 | Error e ->
                     Log.warn (sprintf "Failed to retrieve database name: %A" e)
                     info.["database_name"] <- JString "neo4j"
@@ -95,7 +112,7 @@ module Metadata =
                         config
                         query
                         (fun record -> record.["nodeCount"].As<int64>(), record.["relCount"].As<int64>())
-                        1 // Exactly 1 result expected
+                        1
 
                 match result with
                 | Ok records ->
@@ -103,11 +120,8 @@ module Metadata =
                     | [ (nodeCount, relCount) ] ->
                         stats.["nodeCount"] <- JNumber(decimal nodeCount)
                         stats.["relCount"] <- JNumber(decimal relCount)
-                    | [] ->
-                        Log.warn "No results from statistics query"
-                        stats.["nodeCount"] <- JNumber 0M
-                        stats.["relCount"] <- JNumber 0M
                     | _ ->
+                        Log.warn "No results from statistics query"
                         stats.["nodeCount"] <- JNumber 0M
                         stats.["relCount"] <- JNumber 0M
                 | Error e ->
@@ -141,7 +155,7 @@ module Metadata =
                             config
                             "CALL db.labels() YIELD label RETURN collect(label) as labels"
                             (fun record -> record.["labels"].As<List<obj>>())
-                            1 // Returns exactly 1 row with collected labels
+                            1
 
                     match result with
                     | Ok records ->
@@ -160,7 +174,7 @@ module Metadata =
                             config
                             "CALL db.relationshipTypes() YIELD relationshipType RETURN collect(relationshipType) as types"
                             (fun record -> record.["types"].As<List<obj>>())
-                            1 // Returns exactly 1 row with collected types
+                            1
 
                     match result with
                     | Ok records ->
@@ -174,7 +188,6 @@ module Metadata =
                 return Ok(schema :> IDictionary<string, JsonValue>)
         }
 
-    /// Enhances metadata with export manifest details after completion
     let enhanceWithManifest
         (metadata: FullMetadata)
         (labelStatsTracker: LabelStatsTracker.Tracker)
@@ -189,7 +202,6 @@ module Metadata =
         { metadata with
             ExportManifest = Some manifestDetails }
 
-    /// Adds error summary to metadata (always present)
     let addErrorSummary (metadata: FullMetadata) (errorTracker: ErrorTracking.ErrorTracker) : FullMetadata =
         let errorSummary =
             { ErrorCount = errorTracker.GetErrorCount()
@@ -199,7 +211,6 @@ module Metadata =
         { metadata with
             ErrorSummary = Some errorSummary }
 
-    /// Adds format info to metadata with line numbers
     let addFormatInfo (metadata: FullMetadata) (lineState: LineTrackingState) : FullMetadata =
         let formatInfo =
             { Type = "jsonl"; MetadataLine = 1 }
@@ -219,7 +230,6 @@ module Metadata =
         =
         async {
             Log.info "Collecting metadata..."
-            // Sequential collection due to Neo4j session thread-safety constraints
             let! dbInfo = collectDatabaseInfo session breaker config
             let! stats = collectStatistics session breaker config
             let! schema = collectSchema session breaker config
@@ -256,17 +266,17 @@ module Metadata =
                 let compression =
                     { Recommended = "zstd"
                       Compatible = [ "zstd"; "gzip"; "brotli"; "none" ]
-                      ExpectedRatio = Some 0.3 // Estimate 70% compression
+                      ExpectedRatio = Some 0.3
                       Suffix = ".jsonl.zst" }
 
                 let metadata =
-                    { FormatVersion = FORMAT_VERSION // New root-level field
+                    { FormatVersion = FORMAT_VERSION
                       ExportMetadata =
                         { ExportId = Guid.NewGuid()
                           ExportTimestampUtc = DateTime.UtcNow
                           ExportMode = "native_driver_streaming"
                           Format = None }
-                      Producer = exportScript // Renamed from ExportScript
+                      Producer = exportScript
                       SourceSystem =
                         { Type = "neo4j"
                           Version =
@@ -326,16 +336,15 @@ module Metadata =
         }
 
 
-    /// Estimates the maximum possible metadata size for placeholder allocation
-    /// This runs BEFORE export when statistics are unknown
+    /// Estimates maximum metadata size for placeholder allocation
     let estimateMaxMetadataSize (config: ExportConfig) (baseMetadata: FullMetadata) : int =
         let actualLabelCount =
             match baseMetadata.DatabaseSchema.TryGetValue("labels") with
             | true, value ->
                 match value with
                 | JArray labels -> labels.Length
-                | _ -> 20 // Reasonable default
-            | _ -> 20 // Reasonable default
+                | _ -> 20
+            | _ -> 20
 
         let jsonOptions =
             JsonConfig.createDataExportJsonOptions ()
@@ -348,9 +357,9 @@ module Metadata =
 
         let perLabelOverhead = 500
         let generalBuffer = 4096
-        let recordTypesSize = 2000 // Fixed size for record type definitions
-        let compressionSize = 500 // Fixed size for compression hints
-        let compatibilitySize = 300 // Fixed size for compatibility info
+        let recordTypesSize = 2000
+        let compressionSize = 500
+        let compatibilitySize = 300
 
         let estimatedSize =
             currentMetadataBytes.Length
