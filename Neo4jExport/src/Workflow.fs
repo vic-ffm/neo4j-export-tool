@@ -79,7 +79,7 @@ module Workflow =
                     sprintf
                         "neo4j_export.tmp.%d.%s"
                         (System.Diagnostics.Process.GetCurrentProcess().Id)
-                        (Guid.NewGuid().ToString("N").Substring(0, 8))
+                        (Path.GetRandomFileName())
                 )
 
             Cleanup.registerTempFile context finalTempFile
