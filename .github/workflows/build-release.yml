@@ -1,0 +1,179 @@
+name: Build and Release Binaries
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Build binaries for all platforms
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Get version from Directory.Build.props
+      id: version
+      run: |
+        VERSION=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Building version: ${VERSION}"
+        
+    - name: Restore dependencies
+      run: dotnet restore Neo4jExport/Neo4jExport.fsproj
+      
+    - name: Build macOS Apple Silicon (osx-arm64)
+      run: |
+        dotnet publish Neo4jExport/Neo4jExport.fsproj \
+          -c Release \
+          -r osx-arm64 \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:PublishReadyToRun=false \
+          -p:EnableCompressionInSingleFile=true \
+          -p:DebugType=embedded \
+          -o ./publish/macos-apple-silicon
+          
+    - name: Build macOS Intel (osx-x64)
+      run: |
+        dotnet publish Neo4jExport/Neo4jExport.fsproj \
+          -c Release \
+          -r osx-x64 \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:PublishReadyToRun=false \
+          -p:EnableCompressionInSingleFile=true \
+          -p:DebugType=embedded \
+          -o ./publish/macos-intel
+          
+    - name: Build Linux AMD64 (linux-x64)
+      run: |
+        dotnet publish Neo4jExport/Neo4jExport.fsproj \
+          -c Release \
+          -r linux-x64 \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:PublishReadyToRun=true \
+          -p:EnableCompressionInSingleFile=true \
+          -p:DebugType=embedded \
+          -o ./publish/linux-amd64
+          
+    - name: Build Linux ARM64 (linux-arm64)
+      run: |
+        dotnet publish Neo4jExport/Neo4jExport.fsproj \
+          -c Release \
+          -r linux-arm64 \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:PublishReadyToRun=true \
+          -p:EnableCompressionInSingleFile=true \
+          -p:DebugType=embedded \
+          -o ./publish/linux-arm64
+          
+    - name: Build Windows x64 (win-x64)
+      run: |
+        dotnet publish Neo4jExport/Neo4jExport.fsproj \
+          -c Release \
+          -r win-x64 \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:PublishReadyToRun=true \
+          -p:EnableCompressionInSingleFile=true \
+          -p:DebugType=embedded \
+          -o ./publish/windows-x64
+          
+    - name: Build Windows ARM64 (win-arm64)
+      run: |
+        dotnet publish Neo4jExport/Neo4jExport.fsproj \
+          -c Release \
+          -r win-arm64 \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:PublishReadyToRun=false \
+          -p:EnableCompressionInSingleFile=true \
+          -p:DebugType=embedded \
+          -o ./publish/windows-arm64
+          
+    - name: Rename binaries
+      run: |
+        mv ./publish/macos-apple-silicon/neo4j-export ./publish/neo4j-export-darwin-arm64
+        mv ./publish/macos-intel/neo4j-export ./publish/neo4j-export-darwin-amd64
+        mv ./publish/linux-amd64/neo4j-export ./publish/neo4j-export-linux-amd64
+        mv ./publish/linux-arm64/neo4j-export ./publish/neo4j-export-linux-arm64
+        mv ./publish/windows-x64/neo4j-export.exe ./publish/neo4j-export-windows-amd64.exe
+        mv ./publish/windows-arm64/neo4j-export.exe ./publish/neo4j-export-windows-arm64.exe
+        
+    - name: Create checksums
+      run: |
+        cd ./publish
+        sha256sum neo4j-export-* > checksums.txt
+        cat checksums.txt
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: neo4j-export-binaries
+        path: |
+          ./publish/neo4j-export-*
+          ./publish/checksums.txt
+        retention-days: 90
+        
+    - name: Create Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ steps.version.outputs.version }}-${{ github.run_number }}
+        name: Release v${{ steps.version.outputs.version }}-${{ github.run_number }}
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        files: |
+          ./publish/neo4j-export-*
+          ./publish/checksums.txt
+        body: |
+          ## Neo4j Export Tool v${{ steps.version.outputs.version }}
+          
+          ### Downloads
+          
+          | Platform | Architecture | Download |
+          |----------|--------------|----------|
+          | macOS | Apple Silicon (ARM64) | [neo4j-export-darwin-arm64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-darwin-arm64) |
+          | macOS | Intel (x64) | [neo4j-export-darwin-amd64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-darwin-amd64) |
+          | Linux | x64 | [neo4j-export-linux-amd64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-linux-amd64) |
+          | Linux | ARM64 | [neo4j-export-linux-arm64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-linux-arm64) |
+          | Windows | x64 | [neo4j-export-windows-amd64.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-windows-amd64.exe) |
+          | Windows | ARM64 | [neo4j-export-windows-arm64.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-windows-arm64.exe) |
+          
+          ### Installation
+          
+          1. Download the appropriate binary for your platform
+          2. Make it executable (macOS/Linux): `chmod +x neo4j-export-*`
+          3. Move to your PATH or run directly
+          
+          ### Verify checksums
+          
+          Download `checksums.txt` and verify:
+          ```bash
+          sha256sum -c checksums.txt
+          ```

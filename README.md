@@ -18,13 +18,13 @@
 
 ## Overview
 
-Neo4j Export Tool is a memory efficient utility for exporting Neo4j databases (versions 3.5+ through 5.x) to JSONL format. Built with F# for type safety and functional reliability, it handles multi terabyte datasets while maintaining constant memory usage of ~150MB.
+Neo4j Export Tool is a memory efficient utility for exporting Neo4j databases (versions 4.4+ through 5.x) to JSONL format. Built with F# for type safety and functional reliability, it handles multi terabyte datasets while maintaining constant memory usage of ~150MB.
 
 ### Key Capabilities
 
 - 🚀 **50K-60K records/second** throughput (hardware dependent)
 - 💾 **Constant memory usage** regardless of database size
-- 🔄 **Universal compatibility** with Neo4j 3.5+ (no APOC required)
+- 🔄 **Universal compatibility** with Neo4j 4.4+ (no APOC required)
 - 🛡️ **Enterprise resilience** with circuit breakers and retry logic
 - 📊 **Comprehensive statistics** and progress monitoring
 - 🔒 **Security design** for handling untrusted data

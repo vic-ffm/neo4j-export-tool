@@ -8,18 +8,12 @@ services:
     image: neo4j-export-fsharp:${VERSION:-latest}
     container_name: neo4j-export-fsharp
     
-    # Security settings from original compose file
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # Temporarily removed read_only to allow .NET runtime to initialize
-    # read_only: true
     
-    # Azure Linux Chiseled images run as non-root by default
-    # user: "appuser"  # Not needed - distroless runs as non-root automatically
     
-    # Resource limits
     deploy:
       resources:
         limits:
@@ -29,30 +23,23 @@ services:
           cpus: "0.5"
           memory: 512M
 
-    # Environment variables from .env file
     env_file:
       - .env
     
-    # Additional environment variables for .NET runtime
     environment:
       - DOTNET_SKIP_FIRST_TIME_EXPERIENCE=true
       - DOTNET_CLI_TELEMETRY_OPTOUT=1
       - DOTNET_NOLOGO=true
 
-    # Mount the export directory
     volumes:
       - ./exports:/data/export
 
-    # Use host networking to connect to Neo4j on localhost if needed,
-    # or define a shared network.
     network_mode: "host"
 
-    # Logging configuration
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-    # Do not restart on failure for a one-off script
     restart: "no"

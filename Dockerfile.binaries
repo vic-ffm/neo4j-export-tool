@@ -1,22 +1,14 @@
-# Multi-stage Dockerfile for building platform-specific binaries
-# This extends the main build to create self-contained single-file executables
-
-# Build stage - Use Azure Linux SDK to compile the F# project
+# Build stage
 FROM mcr.microsoft.com/dotnet/sdk:9.0-azurelinux3.0 AS build-base
 
-# Set up build environment
 WORKDIR /src
 
-# Copy project file and restore dependencies (better layer caching)
 COPY Neo4jExport/Neo4jExport.fsproj ./Neo4jExport/
 RUN dotnet restore Neo4jExport/Neo4jExport.fsproj
 
-# Copy source code
 COPY Neo4jExport/ ./Neo4jExport/
 
-# ============================================
 # macOS Apple Silicon Build Stage
-# ============================================
 FROM build-base AS macos-apple-silicon-build
 RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -c Release \
@@ -29,9 +21,7 @@ RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -p:DebugType=embedded \
     -o /app/publish/macos-apple-silicon
 
-# ============================================
 # macOS Intel Build Stage
-# ============================================
 FROM build-base AS macos-intel-build
 RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -c Release \
@@ -44,9 +34,7 @@ RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -p:DebugType=embedded \
     -o /app/publish/macos-intel
 
-# ============================================
 # Linux AMD64 Build Stage
-# ============================================
 FROM build-base AS linux-amd64-build
 RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -c Release \
@@ -59,9 +47,7 @@ RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -p:DebugType=embedded \
     -o /app/publish/linux-amd64
 
-# ============================================
 # Linux ARM64 Build Stage
-# ============================================
 FROM build-base AS linux-arm64-build
 RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -c Release \
@@ -74,9 +60,7 @@ RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -p:DebugType=embedded \
     -o /app/publish/linux-arm64
 
-# ============================================
 # Windows x64 Build Stage
-# ============================================
 FROM build-base AS windows-x64-build
 RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -c Release \
@@ -89,9 +73,7 @@ RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -p:DebugType=embedded \
     -o /app/publish/windows-x64
 
-# ============================================
 # Windows ARM64 Build Stage
-# ============================================
 FROM build-base AS windows-arm64-build
 RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -c Release \
@@ -104,37 +86,26 @@ RUN dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -p:DebugType=embedded \
     -o /app/publish/windows-arm64
 
-# ============================================
-# Export stages - for extracting binaries
-# ============================================
-
 # Export macOS Apple Silicon binary
 FROM scratch AS macos-apple-silicon-export
 COPY --from=macos-apple-silicon-build /app/publish/macos-apple-silicon/neo4j-export /neo4j-export-darwin-arm64
 
-# Export macOS Intel binary
 FROM scratch AS macos-intel-export
 COPY --from=macos-intel-build /app/publish/macos-intel/neo4j-export /neo4j-export-darwin-amd64
 
-# Export Linux AMD64 binary
 FROM scratch AS linux-amd64-export
 COPY --from=linux-amd64-build /app/publish/linux-amd64/neo4j-export /neo4j-export-linux-amd64
 
-# Export Linux ARM64 binary
 FROM scratch AS linux-arm64-export
 COPY --from=linux-arm64-build /app/publish/linux-arm64/neo4j-export /neo4j-export-linux-arm64
 
-# Export Windows x64 binary
 FROM scratch AS windows-x64-export
 COPY --from=windows-x64-build /app/publish/windows-x64/neo4j-export.exe /neo4j-export-windows-amd64.exe
 
-# Export Windows ARM64 binary
 FROM scratch AS windows-arm64-export
 COPY --from=windows-arm64-build /app/publish/windows-arm64/neo4j-export.exe /neo4j-export-windows-arm64.exe
 
-# ============================================
 # All binaries export stage
-# ============================================
 FROM scratch AS all-binaries
 COPY --from=macos-apple-silicon-build /app/publish/macos-apple-silicon/neo4j-export /neo4j-export-darwin-arm64
 COPY --from=macos-intel-build /app/publish/macos-intel/neo4j-export /neo4j-export-darwin-amd64
