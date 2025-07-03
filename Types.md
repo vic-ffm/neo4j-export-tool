@@ -5,18 +5,18 @@ The following data types are supported.
 ## Core Primitive Types
 
 ### null
-- **Serialization**: JSON `null`
+- **Serialisation**: JSON `null`
 - **Example**: `null`
 
 ### Boolean
-- **Serialization**: JSON boolean
+- **Serialisation**: JSON boolean
 - **Example**: `true`, `false`
 
 ### Integer
 - **Supported Types**: All CLR integer types
   - Signed: `int16`, `int32`, `int64`, `sbyte`
   - Unsigned: `uint16`, `uint32`, `uint64`, `byte`
-- **Serialization**: JSON number
+- **Serialisation**: JSON number
 - **Example**: `42`, `-1000`, `9223372036854775807`
 
 ### Float
@@ -25,13 +25,13 @@ The following data types are supported.
   - `NaN` → `"NaN"` (string)
   - `Infinity` → `"Infinity"` (string)
   - `-Infinity` → `"-Infinity"` (string)
-- **Serialization**: JSON number (or string for special values)
+- **Serialisation**: JSON number (or string for special values)
 - **Example**: `3.14`, `-0.001`, `"NaN"`
 
 ### String
 - **Maximum Length**: 10,000,000 characters (10MB)
 - **Truncation**: Large strings are truncated with SHA256 hash preserved
-- **Serialization**: JSON string
+- **Serialisation**: JSON string
 - **Truncated Format**:
   ```json
   {
@@ -44,7 +44,7 @@ The following data types are supported.
 
 ### ByteArray
 - **Maximum Size**: 50,000,000 bytes (50MB)
-- **Serialization**: Base64-encoded string
+- **Serialisation**: Base64-encoded string
 - **Truncation**: Large arrays are truncated with SHA256 hash preserved
 - **Example**: `"SGVsbG8gV29ybGQ="`
 
@@ -53,7 +53,7 @@ The following data types are supported.
 ### List
 - **Neo4j Type**: `List<T>`
 - **Maximum Items**: 10,000 (configurable)
-- **Serialization**: JSON array
+- **Serialisation**: JSON array
 - **Supports**: Nested values of any supported type
 - **Truncated Format**:
   ```json
@@ -72,7 +72,7 @@ The following data types are supported.
 ### Map
 - **Neo4j Type**: `Map<String, T>`
 - **Maximum Entries**: 10,000 (configurable)
-- **Serialization**: JSON object
+- **Serialisation**: JSON object
 - **Features**: Automatic key uniqueness (duplicates get numeric suffix)
 - **Example**:
   ```json
@@ -88,7 +88,7 @@ The following data types are supported.
 ### Point
 - **2D Points**: x, y coordinates with SRID
 - **3D Points**: x, y, z coordinates with SRID
-- **Serialization**:
+- **Serialisation**:
   ```json
   {
     "type": "Point",
@@ -130,7 +130,7 @@ All temporal types are serialised using their string representation:
 ## Graph Element Types
 
 ### Node
-- **Serialization**: Full node with labels and properties
+- **Serialisation**: Full node with labels and properties
 - **Format**:
   ```json
   {
@@ -146,7 +146,7 @@ All temporal types are serialised using their string representation:
   ```
 
 ### Relationship
-- **Serialization**: Full relationship with type and properties
+- **Serialisation**: Full relationship with type and properties
 - **Format**:
   ```json
   {
@@ -163,7 +163,7 @@ All temporal types are serialised using their string representation:
   ```
 
 ### Path
-- **Serialization**: Adaptive based on path length
+- **Serialisation**: Adaptive based on path length
 - **Modes**:
   - **Full**: Complete node and relationship data (short paths)
   - **Compact**: IDs and labels only (medium paths)
@@ -187,18 +187,18 @@ All temporal types are serialised using their string representation:
 ## Additional CLR Types
 
 ### DateTime (.NET)
-- **Serialization**: ISO 8601 format
+- **Serialisation**: ISO 8601 format
 - **Example**: `"2024-01-15T14:30:15.1234567+02:00"`
 
 ### DateTimeOffset (.NET)
-- **Serialization**: ISO 8601 format with offset
+- **Serialisation**: ISO 8601 format with offset
 - **Example**: `"2024-01-15T14:30:15.1234567+02:00"`
 
 ## Safety Features
 
 ### Depth Protection
 - **Maximum Nesting**: Configurable (default 10 levels)
-- **Behavior**: Deep structures are truncated with metadata
+- **Behaviour**: Deep structures are truncated with metadata
 - **Example**:
   ```json
   {
@@ -210,11 +210,11 @@ All temporal types are serialised using their string representation:
 
 ### Property Limits
 - **Maximum Properties per Object**: 10,000 (configurable)
-- **Behavior**: Additional properties are omitted with count preserved
+- **Behaviour**: Additional properties are omitted with count preserved
 
 ### Nested Graph Elements
 When nodes or relationships appear as property values (not common but possible in Neo4j):
-- **Deep Mode**: Full serialization (shallow nesting)
+- **Deep Mode**: Full serialisation (shallow nesting)
 - **Shallow Mode**: Basic info only (medium nesting)
 - **Reference Mode**: Minimal ID reference (deep nesting)
 
@@ -235,7 +235,7 @@ The tool ensures valid JSON output even when encountering errors:
 
 ## Unsupported Types
 
-Any types not explicitly listed above will be serialized as:
+Any types not explicitly listed above will be serialised as:
 ```json
 {
   "_type": "TypeName",

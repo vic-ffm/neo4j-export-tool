@@ -18,16 +18,16 @@
 
 ## Overview
 
-Neo4j Export Tool is a memory efficient utility for exporting Neo4j databases (versions 4.4+ through 5.x) to JSONL format. Built with F# for type safety and functional reliability, it handles multi terabyte datasets while maintaining constant memory usage of ~150MB.
+Neo4j Export Tool is a memory-efficient utility for exporting Neo4j databases (versions 4.4+ through 5.x) to JSONL format. Built with F# for type safety and functional reliability, it handles multi-terabyte datasets while maintaining constant memory usage of ~150MB.
 
 ### Key Capabilities
 
 - 🚀 **50K-60K records/second** throughput (hardware dependent)
 - 💾 **Constant memory usage** regardless of database size
-- 🔄 **Universal compatibility** with Neo4j 4.4+ (no APOC required)
+- 🔄 **Universal compatibility** with Neo4j 4.4+ and 5.x (no APOC required)
 - 🛡️ **Enterprise resilience** with circuit breakers and retry logic
 - 📊 **Comprehensive statistics** and progress monitoring
-- 🔒 **Security design** for handling untrusted data
+- 🔐 **Production-ready** with proper error handling and resource limits
 
 ## Features
 
@@ -59,14 +59,14 @@ docker compose -f neo4j-export-runner.compose.yaml up --build
 
 ### Using Pre-built Binaries
 
-Download the appropriate binary for your platform
+Download the latest release from the Releases page.
 
 ## Running
 
 ### Prerequisites
 
-- **For Docker**: Docker Desktop 20.10+ with Docker Compose v2
-- **For binaries**: No prerequisites (self-contained)
+- **For Docker**: Docker (or another OCI runner such as Podman) with Compose support
+- **For binaries**: No prerequisites (self-contained). Download from the [Release](https://github.com/vic-ffm/neo4j-export-tool/releases) Page.
 - **For development**: .NET SDK 9.0+
 
 ### Using Docker
@@ -79,7 +79,7 @@ docker compose -f neo4j-export-runner.compose.yaml build
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/neo4j-export-tool.git
+git clone https://github.com/vic-ffm/neo4j-export-tool
 cd neo4j-export-tool
 
 # Restore dependencies
@@ -123,7 +123,7 @@ For faster builds on your current platform:
 ./build-binaries-on-host.sh
 ```
 
-All binaries will be created in the `dist/` directory with consistent naming:
+All binaries will be created in the `dist/` directory:
 - `neo4j-export-darwin-arm64` (macOS Apple Silicon)
 - `neo4j-export-darwin-amd64` (macOS Intel)
 - `neo4j-export-linux-amd64` (Linux x64)
@@ -154,6 +154,7 @@ dotnet run --project Neo4jExport/Neo4jExport.fsproj
 
 ```bash
 # Load environment from .env file
+npm i dotenv
 dotenv -e .env -- ./neo4j-export
 
 # Or source the file (bash/zsh)
@@ -207,10 +208,20 @@ All configuration is done through environment variables. Copy `.env.example` to 
 | `SKIP_SCHEMA_COLLECTION` | Skip schema metadata collection | `false` |
 | `MAX_RETRIES` | Max retry attempts for failures | `5` |
 | `RETRY_DELAY_MS` | Initial retry delay (uses exponential backoff) | `1000` |
+| `MAX_RETRY_DELAY_MS` | Maximum retry delay | `30000` |
 | `QUERY_TIMEOUT_SECONDS` | Timeout for individual queries | `300` |
 | `DEBUG` | Enable debug logging | `false` |
 | `VALIDATE_JSON` | Validate JSON during export | `true` |
 | `ALLOW_INSECURE` | Allow insecure TLS connections | `false` |
+
+#### Data Safety Limits
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MAX_COLLECTION_ITEMS` | Maximum items in lists/maps | `10000` |
+| `MAX_LABELS_PER_NODE` | Maximum labels per node | `100` |
+| `MAX_PATH_LENGTH` | Maximum path length before truncation | `100000` |
+| `MAX_NESTED_DEPTH` | Maximum nesting depth | `10` |
 
 </details>
 
@@ -230,7 +241,7 @@ OUTPUT_DIRECTORY=/data/export
 </details>
 
 <details>
-<summary>Large Database Optimization</summary>
+<summary>Large Database Optimisation</summary>
 
 ```bash
 # For multi-TB databases
@@ -245,7 +256,7 @@ SKIP_SCHEMA_COLLECTION=true
 
 ## Output Format
 
-The tool exports to JSON Lines (JSONL) format, where each line is a valid JSON object:
+The tool exports to JSON Lines (JSONL) format, where each line is a valid JSON object. See [Metadata.md](Metadata.md) for complete metadata structure details.
 
 ### File Naming Convention
 
@@ -260,19 +271,27 @@ Example: `movies_20241230T143022Z_3610n_4643r_a1b2c3d4.jsonl`
 **Line 1: Metadata**
 ```json
 {
+  "format_version": "1.0.0",
   "export_metadata": {
     "export_id": "a1b2c3d4-b5c6-d7e8-f9g0-h1i2j3k4l5m6",
     "export_timestamp_utc": "2024-12-30T14:30:22.123Z",
-    "tool_version": "0.10.0",
-    "duration_seconds": 45.678
+    "format": {
+      "type": "jsonl",
+      "metadata_line": 1,
+      "node_start_line": 2,
+      "relationship_start_line": 3612
+    }
+  },
+  "producer": {
+    "name": "neo4j-export.dll",
+    "version": "0.10.0"
   },
   "source_system": {
     "type": "neo4j",
     "version": "5.15.0",
     "edition": "enterprise",
     "database": {
-      "name": "movies",
-      "created_at": "2024-01-15T10:00:00Z"
+      "name": "movies"
     }
   },
   "database_statistics": {
@@ -281,30 +300,41 @@ Example: `movies_20241230T143022Z_3610n_4643r_a1b2c3d4.jsonl`
     "labelCount": 5,
     "relTypeCount": 8
   },
+  "database_schema": {
+    "labels": ["Person", "Movie", "Director"],
+    "relationshipTypes": ["ACTED_IN", "DIRECTED", "PRODUCED"]
+  },
   "export_manifest": {
-    "labels": {
-      "Person": { "count": 2000, "bytes": 524288 },
-      "Movie": { "count": 1610, "bytes": 419430 }
-    }
+    "total_export_duration_seconds": 45.678,
+    "file_statistics": [
+      {
+        "label": "Person",
+        "record_count": 2000,
+        "bytes_written": 524288,
+        "export_duration_ms": 1234
+      }
+    ]
   }
 }
 ```
 
 **Lines 2+: Data Records**
 ```json
-{"type":"node","id":123,"labels":["Person"],"properties":{"name":"Tom Hanks","born":1956}}
-{"type":"node","id":456,"labels":["Movie"],"properties":{"title":"Forrest Gump","released":1994}}
-{"type":"relationship","id":789,"label":"ACTED_IN","start":123,"end":456,"properties":{"role":"Forrest"}}
+{"type":"node","element_id":"4:68c06cde-1611-4b8e-a003-616fb97012a3:0","export_id":"a1b2c3d4-b5c6-d7e8-f9g0-h1i2j3k4l5m6","labels":["Person"],"properties":{"name":"Tom Hanks","born":1956}}
+{"type":"node","element_id":"4:98765432-dcba-10fe-5432-0123456789ab:1","export_id":"a1b2c3d4-b5c6-d7e8-f9g0-h1i2j3k4l5m6","labels":["Movie"],"properties":{"title":"Forrest Gump","released":1994}}
+{"type":"relationship","element_id":"5:12345678-abcd-ef01-2345-6789abcdef01:0","export_id":"a1b2c3d4-b5c6-d7e8-f9g0-h1i2j3k4l5m6","label":"ACTED_IN","start_element_id":"4:68c06cde-1611-4b8e-a003-616fb97012a3:0","end_element_id":"4:98765432-dcba-10fe-5432-0123456789ab:1","properties":{"role":"Forrest"}}
 ```
+
+**Note**: The tool uses ElementIds exclusively for Neo4j 5.x compatibility. In Neo4j 4.4, ElementIds will appear as simple numeric strings such as `"100"`.
 
 ### Data Type Support
 
-The exporter handles all Neo4j data types:
+The exporter handles all Neo4j data types. See [Types.md](Types.md) for complete type support details:
 - **Primitives**: String, Integer, Float, Boolean, null
 - **Temporal**: Date, Time, DateTime, LocalDateTime, Duration
 - **Spatial**: Point (2D/3D, Cartographic/Geographic)
 - **Collections**: Lists and nested structures
-- **Special**: Preserves original encoding for data fidelity
+- **Graph Elements**: Nodes, Relationships, and Paths when nested in properties
 
 ## Performance
 
@@ -364,8 +394,11 @@ The exporter handles all Neo4j data types:
 - **Neo4j.fs**: Database client with circuit breaker pattern
 - **Export.fs**: Streaming export engine with pagination
 - **Metadata.fs**: Database introspection and statistics
+- **MetadataWriter.fs**: Metadata serialisation with format versioning
 - **Monitoring.fs**: Background resource monitoring
 - **SignalHandling.fs**: Graceful shutdown (SIGINT/SIGTERM)
+- **ErrorTracking.fs**: Thread-safe error and warning collection
+- **LabelStatsTracker.fs**: Per-label export statistics
 
 ## Troubleshooting
 
@@ -461,10 +494,10 @@ The tool uses specific exit codes for different error types:
 dotnet tool install -g fantomas
 
 # Run format check
-dotnet fantomas src/ --check
+dotnet fantomas Neo4jExport/src/ --check
 
 # Apply formatting
-dotnet fantomas src/
+dotnet fantomas Neo4jExport/src/
 ```
 
 ## License

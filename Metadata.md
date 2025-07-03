@@ -346,4 +346,4 @@ Note: In Neo4j 4.4, ElementIds may appear as simple numeric strings (e.g., "0", 
 
 ## Reserved Fields
 
-The metadata may include a `_reserved` field and padding. These ensure future compatibility and can be safely ignored by readers.
+The metadata will include a `_reserved` field and padding. These ensure future compatibility and can be safely ignored by readers.
