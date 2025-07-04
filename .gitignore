@@ -92,6 +92,11 @@ llm-generated*
 !Metadata.md
 !Types.md
 
+#Single File Outputs
+concatenated_fsharp_files.txt
+concatenate_fsharp.sh
+
+
 
 # Distribution directory - contains built binaries
 /dist/*
