@@ -63,7 +63,7 @@ type SerializationError =
 /// This is intentionally designed for metadata where JSON fidelity matters more than .NET type fidelity.
 type JsonValue =
     | JString of string
-    | JNumber of decimal  // All numeric types converted to decimal for JSON compatibility
+    | JNumber of decimal // All numeric types converted to decimal for JSON compatibility
     | JBool of bool
     | JNull
     | JObject of IDictionary<string, JsonValue>
@@ -185,14 +185,14 @@ type ApplicationContext =
                     | :? System.InvalidOperationException ->
                         // Process was already disposed
                         (false, 0)
-                    | _ ->
-                        (false, 0)
-                
+                    | _ -> (false, 0)
+
                 if canAccessProperties then
                     // We can safely access properties
                     try
                         if not proc.HasExited then
                             proc.Kill()
+
                         proc.Dispose()
                     with ex ->
                         eprintfn "[WARN] Failed to terminate/dispose process (PID %d): %s" processId ex.Message

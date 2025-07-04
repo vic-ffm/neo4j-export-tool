@@ -31,7 +31,12 @@ module Metadata =
     [<Literal>]
     let private FORMAT_VERSION = "1.0.0"
 
-    let private collectDatabaseInfo (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) (errorTracker: ErrorTracking.ErrorTracker) =
+    let private collectDatabaseInfo
+        (session: SafeSession)
+        (breaker: Neo4j.CircuitBreaker)
+        (config: ExportConfig)
+        (errorTracker: ErrorTracking.ErrorTracker)
+        =
         async {
             let info = Dictionary<string, JsonValue>()
 
@@ -55,13 +60,17 @@ module Metadata =
                         info.["version"] <- JString "unknown"
                         info.["edition"] <- JString "unknown"
                 | Error e ->
-                    let msg = sprintf "Failed to retrieve database version info: %A" e
+                    let msg =
+                        sprintf "Failed to retrieve database version info: %A" e
+
                     Log.warn msg
                     errorTracker.AddWarning(msg)
                     info.["version"] <- JString "unknown"
                     info.["edition"] <- JString "unknown"
             with ex ->
-                let msg = sprintf "Exception while collecting database info: %s" ex.Message
+                let msg =
+                    sprintf "Exception while collecting database info: %s" ex.Message
+
                 Log.warn msg
                 errorTracker.AddWarning(msg)
                 info.["version"] <- JString "unknown"
@@ -82,17 +91,23 @@ module Metadata =
                     match records with
                     | [ name ] -> info.["database_name"] <- JString name
                     | _ ->
-                        let msg = "Could not retrieve database name, using default"
+                        let msg =
+                            "Could not retrieve database name, using default"
+
                         Log.warn msg
                         errorTracker.AddWarning(msg)
                         info.["database_name"] <- JString "neo4j"
                 | Error e ->
-                    let msg = sprintf "Failed to retrieve database name: %A" e
+                    let msg =
+                        sprintf "Failed to retrieve database name: %A" e
+
                     Log.warn msg
                     errorTracker.AddWarning(msg)
                     info.["database_name"] <- JString "neo4j"
             with ex ->
-                let msg = sprintf "Exception while retrieving database name: %s" ex.Message
+                let msg =
+                    sprintf "Exception while retrieving database name: %s" ex.Message
+
                 Log.warn msg
                 errorTracker.AddWarning(msg)
                 info.["database_name"] <- JString "neo4j"
@@ -101,7 +116,12 @@ module Metadata =
             return Ok(info :> IDictionary<string, JsonValue>)
         }
 
-    let private collectStatistics (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) (errorTracker: ErrorTracking.ErrorTracker) =
+    let private collectStatistics
+        (session: SafeSession)
+        (breaker: Neo4j.CircuitBreaker)
+        (config: ExportConfig)
+        (errorTracker: ErrorTracking.ErrorTracker)
+        =
         async {
             Log.info "Collecting database statistics..."
             let stats = Dictionary<string, JsonValue>()
@@ -137,13 +157,17 @@ module Metadata =
                         stats.["nodeCount"] <- JNumber 0M
                         stats.["relCount"] <- JNumber 0M
                 | Error e ->
-                    let msg = sprintf "Failed to collect statistics: %A" e
+                    let msg =
+                        sprintf "Failed to collect statistics: %A" e
+
                     Log.warn msg
                     errorTracker.AddWarning(msg)
                     stats.["nodeCount"] <- JNumber 0M
                     stats.["relCount"] <- JNumber 0M
             with ex ->
-                let msg = sprintf "Exception while collecting statistics: %s" ex.Message
+                let msg =
+                    sprintf "Exception while collecting statistics: %s" ex.Message
+
                 Log.warn msg
                 errorTracker.AddWarning(msg)
                 stats.["nodeCount"] <- JNumber 0M
@@ -154,7 +178,12 @@ module Metadata =
             return Ok(stats :> IDictionary<string, JsonValue>)
         }
 
-    let private collectSchema (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) (errorTracker: ErrorTracking.ErrorTracker) =
+    let private collectSchema
+        (session: SafeSession)
+        (breaker: Neo4j.CircuitBreaker)
+        (config: ExportConfig)
+        (errorTracker: ErrorTracking.ErrorTracker)
+        =
         async {
             if config.SkipSchemaCollection then
                 Log.info "Skipping schema collection (disabled by configuration)"
@@ -162,7 +191,9 @@ module Metadata =
             else
                 Log.info "Collecting basic schema information..."
                 let schema = Dictionary<string, JsonValue>()
-                let jsonConversionError = JString "serialization_error" // A sensible default
+
+                let jsonConversionError =
+                    JString "serialization_error" // A sensible default
 
                 try
                     let! result =
@@ -177,18 +208,24 @@ module Metadata =
                     match result with
                     | Ok records ->
                         match records with
-                        | [ labels ] -> 
+                        | [ labels ] ->
                             schema.["labels"] <- JsonHelpers.toJsonValueWithDefault jsonConversionError Log.warn labels
-                        | _ -> 
-                            let msg = "Failed to collect database labels: unexpected result count"
+                        | _ ->
+                            let msg =
+                                "Failed to collect database labels: unexpected result count"
+
                             Log.warn msg
                             errorTracker.AddWarning(msg)
-                    | Error e -> 
-                        let msg = sprintf "Failed to collect database labels: %A" e
+                    | Error e ->
+                        let msg =
+                            sprintf "Failed to collect database labels: %A" e
+
                         Log.warn msg
                         errorTracker.AddWarning(msg)
                 with ex ->
-                    let msg = sprintf "Exception while collecting labels: %s" ex.Message
+                    let msg =
+                        sprintf "Exception while collecting labels: %s" ex.Message
+
                     Log.warn msg
                     errorTracker.AddWarning(msg)
 
@@ -205,18 +242,25 @@ module Metadata =
                     match result with
                     | Ok records ->
                         match records with
-                        | [ types ] -> 
-                            schema.["relationshipTypes"] <- JsonHelpers.toJsonValueWithDefault jsonConversionError Log.warn types
-                        | _ -> 
-                            let msg = "Failed to collect relationship types: unexpected result count"
+                        | [ types ] ->
+                            schema.["relationshipTypes"] <-
+                                JsonHelpers.toJsonValueWithDefault jsonConversionError Log.warn types
+                        | _ ->
+                            let msg =
+                                "Failed to collect relationship types: unexpected result count"
+
                             Log.warn msg
                             errorTracker.AddWarning(msg)
-                    | Error e -> 
-                        let msg = sprintf "Failed to collect relationship types: %A" e
+                    | Error e ->
+                        let msg =
+                            sprintf "Failed to collect relationship types: %A" e
+
                         Log.warn msg
                         errorTracker.AddWarning(msg)
                 with ex ->
-                    let msg = sprintf "Exception while collecting relationship types: %s" ex.Message
+                    let msg =
+                        sprintf "Exception while collecting relationship types: %s" ex.Message
+
                     Log.warn msg
                     errorTracker.AddWarning(msg)
 
@@ -286,7 +330,9 @@ module Metadata =
                 else
                     st.["relTypeCount"] <- JNumber 0M
 
-                let! scriptChecksum = Utils.getScriptChecksum (AppContext.getCancellationToken context) |> Async.AwaitTask
+                let! scriptChecksum =
+                    Utils.getScriptChecksum (AppContext.getCancellationToken context)
+                    |> Async.AwaitTask
 
                 let exportScript =
                     { Name = Path.GetFileName(System.Reflection.Assembly.GetExecutingAssembly().Location)

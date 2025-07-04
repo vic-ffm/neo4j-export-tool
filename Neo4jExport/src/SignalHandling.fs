@@ -50,7 +50,7 @@ module SignalHandling =
                         Log.warn "Received SIGTERM signal, requesting shutdown..."
                         AppContext.cancel context)
             )
-        
+
         Some(sigtermRegistration :> IDisposable)
 #else
         let registerSigtermFallback () =
@@ -79,10 +79,11 @@ module SignalHandling =
                                     Log.warn "Received SIGTERM signal, requesting shutdown..."
                                     AppContext.cancel context)
 
-                        let registration = createMethod.Invoke(null, [| sigterm; box handler |])
-                        
+                        let registration =
+                            createMethod.Invoke(null, [| sigterm; box handler |])
+
                         Log.debug "SIGTERM handler registered via reflection"
-                        
+
                         // Check if the result implements IDisposable
                         match registration with
                         | :? IDisposable as disposable -> Some disposable

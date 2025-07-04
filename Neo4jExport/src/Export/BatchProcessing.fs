@@ -112,7 +112,7 @@ let private tryGetNodes (startVal: obj) (endVal: obj) =
     try
         let startNode = startVal.As<INode>()
         let endNode = endVal.As<INode>()
-        Ok (startNode, endNode)
+        Ok(startNode, endNode)
     with ex ->
         Error ex
 
@@ -170,17 +170,18 @@ let processRelationshipRecord (buffer: ArrayBufferWriter<byte>) record exportId 
     match tryGetRelationship record, record.TryGetValue("s"), record.TryGetValue("t") with
     | Ok rel, (true, startVal), (true, endVal) ->
         // Phase 1 & 2: Extract IDs directly from relationship first (safe operation)
-        let struct (relId, startId, endId, relType, idsExtracted) = tryExtractRelationshipIdsDirectly rel
-        
+        let struct (relId, startId, endId, relType, idsExtracted) =
+            tryExtractRelationshipIdsDirectly rel
+
         // Phase 3: Try to get nodes for full serialization
         match tryGetNodes startVal endVal with
-        | Ok (startNode, endNode) ->
+        | Ok(startNode, endNode) ->
             // We have nodes, use them for full serialization
             let ids =
                 { ElementId = relId
                   StartElementId = startId
                   EndElementId = endId }
-            
+
             writeRelationship writer rel ids ctx
         | Error ex ->
             // Phase 4: Node casting failed, but we already have IDs from the relationship
@@ -196,7 +197,15 @@ let processRelationshipRecord (buffer: ArrayBufferWriter<byte>) record exportId 
             writer.WriteString("type", "relationship")
             writer.WriteString("element_id", relId)
             writer.WriteString("export_id", ctx.ExportId.ToString())
-            writer.WriteString("label", if String.IsNullOrEmpty(relType) then "_UNKNOWN" else relType)
+
+            writer.WriteString(
+                "label",
+                if String.IsNullOrEmpty(relType) then
+                    "_UNKNOWN"
+                else
+                    relType
+            )
+
             writer.WriteString("start_element_id", startId)
             writer.WriteString("end_element_id", endId)
             writer.WriteStartObject "properties"
