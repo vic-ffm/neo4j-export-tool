@@ -31,40 +31,35 @@ open ErrorTracking
 
 /// Struct key for efficient deduplication in hot path
 [<Struct>]
-type ErrorKey = {
-    ExceptionTypeHash: int
-    MessagePrefixHash: int
-}
+type ErrorKey =
+    { ExceptionTypeHash: int
+      MessagePrefixHash: int }
 
 /// Pure function to generate deduplication key from exception
 let inline generateErrorKey (ex: exn) : ErrorKey =
     let exceptionType = ex.GetType().Name
     let message = ex.Message
-    
+
     // Extract fixed-length prefix to prevent unbounded keys
-    let messagePrefix = 
-        if message.Length > 100 then 
+    let messagePrefix =
+        if message.Length > 100 then
             message.Substring(0, 100)
-        else 
+        else
             message
-    
-    {
-        ExceptionTypeHash = exceptionType.GetHashCode(StringComparison.Ordinal)
-        MessagePrefixHash = messagePrefix.GetHashCode(StringComparison.Ordinal)
-    }
+
+    { ExceptionTypeHash = exceptionType.GetHashCode(StringComparison.Ordinal)
+      MessagePrefixHash = messagePrefix.GetHashCode(StringComparison.Ordinal) }
 
 /// Pure function to generate key from error details
 let inline generateErrorKeyFromDetails (exceptionType: string) (message: string) : ErrorKey =
-    let messagePrefix = 
-        if message.Length > 100 then 
+    let messagePrefix =
+        if message.Length > 100 then
             message.Substring(0, 100)
-        else 
+        else
             message
-    
-    {
-        ExceptionTypeHash = exceptionType.GetHashCode(StringComparison.Ordinal)
-        MessagePrefixHash = messagePrefix.GetHashCode(StringComparison.Ordinal)
-    }
+
+    { ExceptionTypeHash = exceptionType.GetHashCode(StringComparison.Ordinal)
+      MessagePrefixHash = messagePrefix.GetHashCode(StringComparison.Ordinal) }
 
 // --- Mutable Statistics Types ---
 
@@ -89,48 +84,43 @@ let inline shouldAddSample (stats: ErrorStatistics) : bool =
 // --- Batch Error Accumulator ---
 
 /// Information stored for each unique error
-type ErrorInfo = {
-    ExceptionType: string
-    Message: string
-    EntityType: string
-    ErrorType: string
-}
+type ErrorInfo =
+    { ExceptionType: string
+      Message: string
+      EntityType: string
+      ErrorType: string }
 
 /// Batch-scoped error accumulator with pre-allocated structures
-type BatchErrorAccumulator = {
-    Errors: Dictionary<ErrorKey, ErrorInfo * ErrorStatistics>
-    mutable CurrentIndex: int64
-    mutable TotalErrors: int64
-}
+type BatchErrorAccumulator =
+    { Errors: Dictionary<ErrorKey, ErrorInfo * ErrorStatistics>
+      mutable CurrentIndex: int64
+      mutable TotalErrors: int64 }
 
 /// Create a new accumulator with expected capacity
 let createAccumulator (capacity: int) : BatchErrorAccumulator =
-    {
-        Errors = Dictionary<ErrorKey, ErrorInfo * ErrorStatistics>(capacity)
-        CurrentIndex = 0L
-        TotalErrors = 0L
-    }
+    { Errors = Dictionary<ErrorKey, ErrorInfo * ErrorStatistics>(capacity)
+      CurrentIndex = 0L
+      TotalErrors = 0L }
 
 /// Add error to accumulator (mutating operation isolated here)
-let accumulateError 
-    (accumulator: BatchErrorAccumulator) 
-    (key: ErrorKey) 
-    (errorInfo: ErrorInfo)
-    (elementId: string) =
-    
+let accumulateError (accumulator: BatchErrorAccumulator) (key: ErrorKey) (errorInfo: ErrorInfo) (elementId: string) =
+
     accumulator.CurrentIndex <- accumulator.CurrentIndex + 1L
     accumulator.TotalErrors <- accumulator.TotalErrors + 1L
-    
+
     match accumulator.Errors.TryGetValue(key) with
     | true, (info, stats) ->
         // Update existing error statistics
         stats.Count <- stats.Count + 1
+
         if shouldAddSample stats then
             stats.SampleElementIds.[stats.SampleCount] <- elementId
             stats.SampleCount <- stats.SampleCount + 1
     | false, _ ->
         // Add new error
-        let stats = createErrorStatistics accumulator.CurrentIndex elementId
+        let stats =
+            createErrorStatistics accumulator.CurrentIndex elementId
+
         accumulator.Errors.[key] <- (errorInfo, stats)
 
 /// Clear accumulator for reuse
@@ -143,68 +133,70 @@ let clearAccumulator (accumulator: BatchErrorAccumulator) =
 
 /// Format error message with deduplication statistics
 let formatDedupedError (info: ErrorInfo) (stats: ErrorStatistics) (batchSize: int64) : string =
-    let percentage = 
+    let percentage =
         if batchSize > 0L then
             (float stats.Count / float batchSize) * 100.0
         else
             0.0
-    
-    let samples = 
-        stats.SampleElementIds 
+
+    let samples =
+        stats.SampleElementIds
         |> Array.take stats.SampleCount
         |> String.concat ", "
-    
-    sprintf "%s [Occurred %d times (%.1f%% of batch), first at index %d, sample IDs: %s]" 
-        info.Message 
-        stats.Count 
-        percentage 
+
+    sprintf
+        "%s [Occurred %d times (%.1f%% of batch), first at index %d, sample IDs: %s]"
+        info.Message
+        stats.Count
+        percentage
         stats.FirstOccurrenceIndex
         samples
 
 /// Create error details for ErrorTracker
 let createErrorDetails (info: ErrorInfo) (stats: ErrorStatistics) : IDictionary<string, JsonValue> option =
-    let details = Dictionary<string, JsonValue>()
+    let details =
+        Dictionary<string, JsonValue>()
+
     details.["entity_type"] <- JString info.EntityType
     details.["exception_type"] <- JString info.ErrorType
     details.["serialization_phase"] <- JString "write"
-    details.["occurrence_count"] <- JNumber (decimal stats.Count)
-    details.["first_occurrence_index"] <- JNumber (decimal stats.FirstOccurrenceIndex)
-    
-    let sampleIds = 
-        stats.SampleElementIds 
+    details.["occurrence_count"] <- JNumber(decimal stats.Count)
+    details.["first_occurrence_index"] <- JNumber(decimal stats.FirstOccurrenceIndex)
+
+    let sampleIds =
+        stats.SampleElementIds
         |> Array.take stats.SampleCount
         |> Array.map JString
         |> List.ofArray
         |> JArray
-    
+
     details.["sample_element_ids"] <- sampleIds
-    
-    Some (details :> IDictionary<string, JsonValue>)
+
+    Some(details :> IDictionary<string, JsonValue>)
 
 // --- Flush Operations ---
 
 /// Flush accumulated errors to ErrorTracker
-let flushErrors 
-    (accumulator: BatchErrorAccumulator) 
-    (errorTracker: ErrorTracker) 
-    (batchSize: int64) =
-    
+let flushErrors (accumulator: BatchErrorAccumulator) (errorTracker: ErrorTracker) (batchSize: int64) =
+
     // Fast path: no errors
     if accumulator.Errors.Count = 0 then
         ()
     else
         // Transform and write all accumulated errors
         for KeyValue(_, (info, stats)) in accumulator.Errors do
-            let message = formatDedupedError info stats batchSize
+            let message =
+                formatDedupedError info stats batchSize
+
             let details = createErrorDetails info stats
-            
+
             // Use first sample as primary element ID
-            let primaryElementId = 
-                if stats.SampleCount > 0 then 
+            let primaryElementId =
+                if stats.SampleCount > 0 then
                     Some stats.SampleElementIds.[0]
-                else 
+                else
                     None
-            
+
             errorTracker.AddError(message, ?elementId = primaryElementId, ?details = details)
 
 // --- Integration Helper ---
@@ -215,16 +207,17 @@ let trackSerializationErrorDedup
     (ex: exn)
     (elementId: string)
     (entityType: string)
-    (errorType: string) =
-    
+    (errorType: string)
+    =
+
     let key = generateErrorKey ex
-    let errorInfo = {
-        ExceptionType = ex.GetType().Name
-        Message = sprintf "%s serialization failed: %s" entityType (ErrorAccumulation.exceptionToString ex)
-        EntityType = entityType
-        ErrorType = errorType
-    }
-    
+
+    let errorInfo =
+        { ExceptionType = ex.GetType().Name
+          Message = sprintf "%s serialization failed: %s" entityType (ErrorAccumulation.exceptionToString ex)
+          EntityType = entityType
+          ErrorType = errorType }
+
     accumulateError accumulator key errorInfo elementId
 
 /// Track serialization error by message with deduplication
@@ -233,14 +226,16 @@ let trackSerializationErrorByMessage
     (message: string)
     (elementId: string)
     (entityType: string)
-    (errorType: string) =
-    
-    let key = generateErrorKeyFromDetails errorType message
-    let errorInfo = {
-        ExceptionType = errorType
-        Message = message
-        EntityType = entityType
-        ErrorType = errorType
-    }
-    
+    (errorType: string)
+    =
+
+    let key =
+        generateErrorKeyFromDetails errorType message
+
+    let errorInfo =
+        { ExceptionType = errorType
+          Message = message
+          EntityType = entityType
+          ErrorType = errorType }
+
     accumulateError accumulator key errorInfo elementId

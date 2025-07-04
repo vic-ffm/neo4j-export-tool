@@ -137,12 +137,7 @@ let processNodeRecord errorAccumulator (buffer: ArrayBufferWriter<byte>) record 
         let elementId = ""
 
         // Use deduplication instead of direct tracking
-        trackSerializationErrorDedup
-            errorAccumulator
-            ex
-            elementId
-            "node"
-            "SerializationError"
+        trackSerializationErrorDedup errorAccumulator ex elementId "node" "SerializationError"
 
         writer.WriteStartObject()
         writer.WriteString("type", "node")
@@ -162,7 +157,15 @@ let processNodeRecord errorAccumulator (buffer: ArrayBufferWriter<byte>) record 
     dataBytes, incrementStats stats
 
 /// Relationship processing logic with error deduplication
-let processRelationshipRecord errorAccumulator (buffer: ArrayBufferWriter<byte>) record exportId stats errorTracker config =
+let processRelationshipRecord
+    errorAccumulator
+    (buffer: ArrayBufferWriter<byte>)
+    record
+    exportId
+    stats
+    errorTracker
+    config
+    =
     let ctx =
         SerializationContext.createWriterContext config errorTracker exportId
 
@@ -188,12 +191,7 @@ let processRelationshipRecord errorAccumulator (buffer: ArrayBufferWriter<byte>)
         | Error ex ->
             // Phase 4: Node casting failed, but we already have IDs from the relationship
             // Use deduplication instead of direct tracking
-            trackSerializationErrorDedup
-                errorAccumulator
-                ex
-                relId
-                "relationship"
-                "SerializationError"
+            trackSerializationErrorDedup errorAccumulator ex relId "relationship" "SerializationError"
 
             // Write error record with the IDs we successfully extracted
             writer.WriteStartObject()
@@ -332,12 +330,25 @@ let processBatchedQuery<'state>
                             // Use deduplication-enabled processors
                             let dataBytes, newStats =
                                 match processor.EntityName with
-                                | "Nodes" -> 
-                                    processNodeRecord errorAccumulator buffer record exportId batchStats errorTracker config
+                                | "Nodes" ->
+                                    processNodeRecord
+                                        errorAccumulator
+                                        buffer
+                                        record
+                                        exportId
+                                        batchStats
+                                        errorTracker
+                                        config
                                 | "Relationships" ->
-                                    processRelationshipRecord errorAccumulator buffer record exportId batchStats errorTracker config
-                                | _ ->
-                                    failwithf "Unsupported entity type: %s" processor.EntityName
+                                    processRelationshipRecord
+                                        errorAccumulator
+                                        buffer
+                                        record
+                                        exportId
+                                        batchStats
+                                        errorTracker
+                                        config
+                                | _ -> failwithf "Unsupported entity type: %s" processor.EntityName
 
                             fileStream.Write buffer.WrittenSpan
                             fileStream.Write(newlineBytes, 0, newlineBytes.Length)

@@ -33,4 +33,3 @@ module NonEmptyList =
         function
         | [] -> None
         | h :: t -> Some(NonEmptyList(h, t))
-

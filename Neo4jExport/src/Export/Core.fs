@@ -60,8 +60,9 @@ let exportNodesUnified
 
         let nodeHandler (state: NodeExportState) (record: IRecord) (bytesWritten: int64) : NodeExportState =
             errorTracker.IncrementLine()
-            
-            let newLineState = state.LineState |> LineTracking.incrementLine
+
+            let newLineState =
+                state.LineState |> LineTracking.incrementLine
 
             let labels =
                 try
@@ -120,14 +121,19 @@ let exportRelationships
         Log.info "Exporting relationships..."
 
         let initialState: RelationshipExportState =
-            lineState |> LineTracking.recordTypeStart "relationship"
+            lineState
+            |> LineTracking.recordTypeStart "relationship"
 
         let processor =
             { Query = "MATCH (s)-[r]->(t) RETURN r, s, t SKIP $skip LIMIT $limit"
               GetTotalQuery = Some "MATCH ()-[r]->() RETURN count(r) as count"
               EntityName = "Relationships" }
 
-        let relationshipHandler (state: RelationshipExportState) (record: IRecord) (bytesWritten: int64) : RelationshipExportState =
+        let relationshipHandler
+            (state: RelationshipExportState)
+            (record: IRecord)
+            (bytesWritten: int64)
+            : RelationshipExportState =
             errorTracker.IncrementLine()
             state |> LineTracking.incrementLine
 

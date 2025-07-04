@@ -189,7 +189,11 @@ type ApplicationContext =
                     if System.IO.File.Exists(tempFile) then
                         System.IO.File.Delete(tempFile)
                 with ex ->
-                    eprintfn "[WARN] Failed to delete temporary file '%s': %s: %s" tempFile (ex.GetType().Name) ex.Message
+                    eprintfn
+                        "[WARN] Failed to delete temporary file '%s': %s: %s"
+                        tempFile
+                        (ex.GetType().Name)
+                        ex.Message
 
             // Step 3: Clean up processes with safe property access
             for proc in this.ActiveProcesses do
@@ -212,7 +216,11 @@ type ApplicationContext =
 
                         proc.Dispose()
                     with ex ->
-                        eprintfn "[WARN] Failed to terminate/dispose process (PID %d): %s: %s" processId (ex.GetType().Name) ex.Message
+                        eprintfn
+                            "[WARN] Failed to terminate/dispose process (PID %d): %s: %s"
+                            processId
+                            (ex.GetType().Name)
+                            ex.Message
                 else
                     // Process already disposed, try to dispose anyway
                     try
