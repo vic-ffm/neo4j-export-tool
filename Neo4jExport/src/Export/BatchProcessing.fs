@@ -97,6 +97,25 @@ let private tryExtractRelIds (rel: IRelationship) (startNode: INode) (endNode: I
     with _ ->
         struct ("", "", "", false)
 
+let private tryExtractRelationshipIdsDirectly (rel: IRelationship) =
+    try
+        // Extract IDs directly from the relationship object without needing node instances
+        let relId = rel.ElementId
+        let startId = rel.StartNodeElementId
+        let endId = rel.EndNodeElementId
+        let relType = rel.Type
+        struct (relId, startId, endId, relType, true)
+    with _ ->
+        struct ("", "", "", "", false)
+
+let private tryGetNodes (startVal: obj) (endVal: obj) =
+    try
+        let startNode = startVal.As<INode>()
+        let endNode = endVal.As<INode>()
+        Ok (startNode, endNode)
+    with ex ->
+        Error ex
+
 let private incrementStats (stats: ExportProgress) =
     { stats with
         RecordsProcessed = stats.RecordsProcessed + 1L }
@@ -150,39 +169,39 @@ let processRelationshipRecord (buffer: ArrayBufferWriter<byte>) record exportId 
 
     match tryGetRelationship record, record.TryGetValue("s"), record.TryGetValue("t") with
     | Ok rel, (true, startVal), (true, endVal) ->
-        try
-            let startNode = startVal.As<INode>()
-            let endNode = endVal.As<INode>()
-
+        // Phase 1 & 2: Extract IDs directly from relationship first (safe operation)
+        let struct (relId, startId, endId, relType, idsExtracted) = tryExtractRelationshipIdsDirectly rel
+        
+        // Phase 3: Try to get nodes for full serialization
+        match tryGetNodes startVal endVal with
+        | Ok (startNode, endNode) ->
+            // We have nodes, use them for full serialization
             let ids =
-                { ElementId = rel.ElementId
-                  StartElementId = startNode.ElementId
-                  EndElementId = endNode.ElementId }
-
+                { ElementId = relId
+                  StartElementId = startId
+                  EndElementId = endId }
+            
             writeRelationship writer rel ids ctx
-        with ex ->
-            let elementId =
-                try
-                    rel.ElementId
-                with _ ->
-                    ""
-
+        | Error ex ->
+            // Phase 4: Node casting failed, but we already have IDs from the relationship
             trackSerializationError
                 ctx.ErrorTracker
-                (sprintf "Relationship serialization failed: %s" ex.Message)
-                elementId
+                (sprintf "Failed to cast nodes for relationship serialization: %s" ex.Message)
+                relId
                 "relationship"
                 (ex.GetType().Name)
 
+            // Write error record with the IDs we successfully extracted
             writer.WriteStartObject()
             writer.WriteString("type", "relationship")
-            writer.WriteString("element_id", elementId)
+            writer.WriteString("element_id", relId)
             writer.WriteString("export_id", ctx.ExportId.ToString())
-            writer.WriteString("label", "_UNKNOWN")
-            writer.WriteString("start_element_id", "")
-            writer.WriteString("end_element_id", "")
+            writer.WriteString("label", if String.IsNullOrEmpty(relType) then "_UNKNOWN" else relType)
+            writer.WriteString("start_element_id", startId)
+            writer.WriteString("end_element_id", endId)
             writer.WriteStartObject "properties"
-            writer.WriteString("_export_error", "node_access_failed")
+            writer.WriteString("_export_error", "node_cast_failed")
+            writer.WriteString("_error_message", ex.Message)
             writer.WriteEndObject()
             writer.WriteEndObject()
     | _ ->

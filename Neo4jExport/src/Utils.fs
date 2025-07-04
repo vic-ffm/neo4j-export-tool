@@ -29,7 +29,7 @@ open System.Reflection
 open System.Threading.Tasks
 
 module Utils =
-    let getScriptChecksum (context: ApplicationContext) : Task<string> =
+    let getScriptChecksum (cancellationToken: System.Threading.CancellationToken) : Task<string> =
         task {
             try
                 let assembly =
@@ -38,7 +38,7 @@ module Utils =
                 use stream =
                     File.OpenRead(assembly.Location)
 
-                let! hash = SHA256.HashDataAsync(stream, AppContext.getCancellationToken context)
+                let! hash = SHA256.HashDataAsync(stream, cancellationToken)
                 return BitConverter.ToString(hash).Replace("-", "").ToLower()
             with
             | :? IOException as ex ->
@@ -85,10 +85,8 @@ module Utils =
 
     let ensureDirectoryExists (path: string) =
         try
-            let dir = Path.GetDirectoryName(path)
-
-            if not (String.IsNullOrWhiteSpace(dir)) then
-                Directory.CreateDirectory(dir) |> ignore
+            if not (String.IsNullOrWhiteSpace(path)) then
+                Directory.CreateDirectory(path) |> ignore
 
             Result.Ok()
         with

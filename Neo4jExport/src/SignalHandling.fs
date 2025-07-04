@@ -29,7 +29,7 @@ open System.Runtime.InteropServices
 #endif
 
 module SignalHandling =
-    let registerHandlers (context: ApplicationContext) =
+    let registerHandlers (context: ApplicationContext) : IDisposable option =
         AppDomain.CurrentDomain.UnhandledException.Add(fun args ->
             let ex = args.ExceptionObject :?> Exception
             Log.fatal (sprintf "Unhandled exception: %s" ex.Message)
@@ -42,14 +42,16 @@ module SignalHandling =
                 args.Cancel <- true)
 
 #if NET6_0_OR_GREATER
-        PosixSignalRegistration.Create(
-            PosixSignal.SIGTERM,
-            Action<PosixSignalContext>(fun _ ->
-                if not (AppContext.isCancellationRequested context) then
-                    Log.warn "Received SIGTERM signal, requesting shutdown..."
-                    AppContext.cancel context)
-        )
-        |> ignore
+        let sigtermRegistration =
+            PosixSignalRegistration.Create(
+                PosixSignal.SIGTERM,
+                Action<PosixSignalContext>(fun _ ->
+                    if not (AppContext.isCancellationRequested context) then
+                        Log.warn "Received SIGTERM signal, requesting shutdown..."
+                        AppContext.cancel context)
+            )
+        
+        Some(sigtermRegistration :> IDisposable)
 #else
         let registerSigtermFallback () =
             try
@@ -77,16 +79,23 @@ module SignalHandling =
                                     Log.warn "Received SIGTERM signal, requesting shutdown..."
                                     AppContext.cancel context)
 
-                        createMethod.Invoke(null, [| sigterm; box handler |])
-                        |> ignore
-
+                        let registration = createMethod.Invoke(null, [| sigterm; box handler |])
+                        
                         Log.debug "SIGTERM handler registered via reflection"
+                        
+                        // Check if the result implements IDisposable
+                        match registration with
+                        | :? IDisposable as disposable -> Some disposable
+                        | _ -> None
                     else
                         Log.debug "PosixSignalRegistration.Create method not found"
+                        None
                 else
                     Log.debug "PosixSignalRegistration types not available"
+                    None
             with ex ->
                 Log.debug (sprintf "Could not register SIGTERM handler: %s" ex.Message)
+                None
 
         registerSigtermFallback ()
 #endif

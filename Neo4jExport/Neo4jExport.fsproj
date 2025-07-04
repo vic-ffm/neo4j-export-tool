@@ -9,7 +9,7 @@
     <Authors>Your Organization</Authors>
     <Description>Mission-critical, production-grade tool for exporting Neo4j databases to JSONL format</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
@@ -20,7 +20,6 @@
   <ItemGroup>
     <PackageReference Include="Neo4j.Driver" Version="5.28.1" />
     <PackageReference Include="System.Text.Json" Version="9.0.6" />
-    <PackageReference Include="Fantomas.Core" Version="7.0.2" />
     <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
   </ItemGroup>
 

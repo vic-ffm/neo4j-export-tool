@@ -57,6 +57,18 @@ type SerializationError =
     | PropertySerializationFailed of key: string * error: string
     | InvalidValue of message: string
 
+/// Simple JSON representation type for METADATA COLLECTION ONLY.
+/// WARNING: This type uses decimal for all numbers, which loses original numeric type information.
+/// DO NOT use for actual Neo4j data export - use Utf8JsonWriter directly for type-safe serialization.
+/// This is intentionally designed for metadata where JSON fidelity matters more than .NET type fidelity.
+type JsonValue =
+    | JString of string
+    | JNumber of decimal  // All numeric types converted to decimal for JSON compatibility
+    | JBool of bool
+    | JNull
+    | JObject of IDictionary<string, JsonValue>
+    | JArray of JsonValue list
+
 type GraphElement =
     | Node of INode
     | Relationship of IRelationship
@@ -148,11 +160,13 @@ type ApplicationContext =
 
     interface IDisposable with
         member this.Dispose() =
+            // Step 1: Dispose cancellation token source first
             try
                 this.CancellationTokenSource.Dispose()
             with ex ->
                 eprintfn "[WARN] Failed to dispose CancellationTokenSource: %s" ex.Message
 
+            // Step 2: Clean up temp files
             for tempFile in this.TempFiles do
                 try
                     if System.IO.File.Exists(tempFile) then
@@ -160,14 +174,34 @@ type ApplicationContext =
                 with ex ->
                     eprintfn "[WARN] Failed to delete temporary file '%s': %s" tempFile ex.Message
 
+            // Step 3: Clean up processes with safe property access
             for proc in this.ActiveProcesses do
-                try
-                    if not proc.HasExited then
-                        proc.Kill()
-
-                    proc.Dispose()
-                with ex ->
-                    eprintfn "[WARN] Failed to terminate/dispose process (PID %d): %s" proc.Id ex.Message
+                // First, try to get process info for logging
+                let (canAccessProperties, processId) =
+                    try
+                        let pid = proc.Id
+                        (true, pid)
+                    with
+                    | :? System.InvalidOperationException ->
+                        // Process was already disposed
+                        (false, 0)
+                    | _ ->
+                        (false, 0)
+                
+                if canAccessProperties then
+                    // We can safely access properties
+                    try
+                        if not proc.HasExited then
+                            proc.Kill()
+                        proc.Dispose()
+                    with ex ->
+                        eprintfn "[WARN] Failed to terminate/dispose process (PID %d): %s" processId ex.Message
+                else
+                    // Process already disposed, try to dispose anyway
+                    try
+                        proc.Dispose()
+                    with _ ->
+                        () // Silently ignore - process was already disposed
 
 type ExportScriptMetadata =
     { [<JsonPropertyName("name")>]
@@ -256,14 +290,6 @@ type ErrorSummary =
       [<JsonPropertyName("has_errors")>]
       HasErrors: bool }
 
-/// Type-safe representation of JSON values
-type JsonValue =
-    | JString of string
-    | JNumber of decimal
-    | JBool of bool
-    | JNull
-    | JObject of IDictionary<string, JsonValue>
-    | JArray of JsonValue list
 
 /// Reserved metadata for future use
 type ReservedMetadata =

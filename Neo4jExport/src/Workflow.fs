@@ -63,7 +63,7 @@ module Workflow =
         exitCode
 
     /// Performs export with efficient single-pass data writing and statistics collection
-    let private performExport context session config metadata : Async<Result<unit, AppError>> =
+    let private performExport context session config metadata errorTracker : Async<Result<unit, AppError>> =
         async {
             let exportId =
                 metadata.ExportMetadata.ExportId
@@ -117,8 +117,6 @@ module Workflow =
                       RecordsSkipped = 0L
                       BytesWritten = 0L
                       StartTime = DateTime.UtcNow }
-
-                let errorTracker = new ErrorTracker()
 
                 let lineTracker = LineTracking.create ()
 
@@ -235,13 +233,16 @@ module Workflow =
                 use monitor =
                     Monitoring.startResourceMonitor context config
 
+                // Create ErrorTracker early to capture all warnings/errors
+                let errorTracker = new ErrorTracker()
+
                 match! Preflight.initializeFileSystem config with
                 | Error e -> return Error e
                 | Ok() ->
                     match! Preflight.runAllChecks context session breaker config with
                     | Error e -> return Error e
                     | Ok() ->
-                        match! Metadata.collect context session breaker config with
+                        match! Metadata.collect context session breaker config errorTracker with
                         | Error e -> return Error e
                         | Ok metadata ->
                             let finalFilename =
@@ -249,6 +250,6 @@ module Workflow =
 
                             Log.info (sprintf "Export filename: %s" (System.IO.Path.GetFileName(finalFilename)))
                             Log.info "Collecting detailed statistics for export manifest"
-                            return! performExport context session config metadata
+                            return! performExport context session config metadata errorTracker
             | Choice2Of2 ex -> return Error(ConnectionError("Failed to connect to Neo4j", Some ex))
         }

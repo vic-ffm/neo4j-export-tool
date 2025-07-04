@@ -1,0 +1,5129 @@
+================================================
+F# Files Concatenation
+Generated on: Fri  4 Jul 2025 12:20:34 AEST
+================================================
+
+
+=================================================================================
+FILE: Neo4jExport/Neo4jExport.fsproj
+=================================================================================
+
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Neo4jExport</RootNamespace>
+    <AssemblyName>neo4j-export</AssemblyName>
+    <!-- Version is inherited from Directory.Build.props -->
+    <Authors>Your Organization</Authors>
+    <Description>Mission-critical, production-grade tool for exporting Neo4j databases to JSONL format</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net6.0' Or '$(TargetFramework)' == 'net7.0' Or '$(TargetFramework)' == 'net8.0' Or '$(TargetFramework)' == 'net9.0'">
+    <DefineConstants>$(DefineConstants);NET6_0_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Neo4j.Driver" Version="5.28.1" />
+    <PackageReference Include="System.Text.Json" Version="9.0.6" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Order matters in F# - files are compiled in the order listed -->
+    <Compile Include="src/Types.fs" />
+    <Compile Include="src/RecordTypes.fs" />
+    <Compile Include="src/ErrorTracking.fs" />
+    <Compile Include="src/JsonHelpers.fs" />
+    <Compile Include="src/Constants.fs" />
+    <Compile Include="src/AppContext.fs" />
+    <Compile Include="src/Log.fs" />
+    <Compile Include="src/LabelStatsTracker.fs" />
+    <Compile Include="src/Security.fs" />
+    <Compile Include="src/Utils.fs" />
+    <Compile Include="src/Configuration.fs" />
+    <Compile Include="src/JsonConfig.fs" />
+    <Compile Include="src/MetadataWriter.fs" />
+    <Compile Include="src/Neo4j.fs" />
+    <Compile Include="src/Preflight.fs" />
+    <Compile Include="src/Metadata.fs" />
+    <Compile Include="src/Cleanup.fs" />
+    
+    <!-- Export module hierarchy -->
+    <Compile Include="src/Export/Types.fs" />
+    <Compile Include="src/Export/Utils.fs" />
+    <Compile Include="src/Export/Serialization/Context.fs" />
+    <Compile Include="src/Export/Serialization/Primitives.fs" />
+    <Compile Include="src/Export/Serialization/Temporal.fs" />
+    <Compile Include="src/Export/Serialization/Spatial.fs" />
+    <Compile Include="src/Export/Serialization/Collections.fs" />
+    <Compile Include="src/Export/Serialization/GraphElements.fs" />
+    <Compile Include="src/Export/Serialization/Path.fs" />
+    <Compile Include="src/Export/Serialization/Engine.fs" />
+    <Compile Include="src/Export/BatchProcessing.fs" />
+    <Compile Include="src/Export/Core.fs" />
+    <Compile Include="src/Export.fs" />
+    
+    <Compile Include="src/Monitoring.fs" />
+    <Compile Include="src/Workflow.fs" />
+    <Compile Include="src/SignalHandling.fs" />
+    <Compile Include="src/Program.fs" />
+  </ItemGroup>
+
+</Project>
+
+=================================================================================
+FILE: Neo4jExport/src/Constants.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+/// Central configuration for all application-wide constants
+module Constants =
+
+    /// Application version information
+    module App =
+        let private getVersion () =
+            let assembly =
+                System.Reflection.Assembly.GetExecutingAssembly()
+
+            let version = assembly.GetName().Version
+
+            if version <> null then
+                sprintf "%d.%d.%d" version.Major version.Minor version.Build
+            else
+                "0.10.0"
+
+        let Version = getVersion ()
+        let VersionString = sprintf "v%s" Version
+
+    /// Environment variable names
+    module Env =
+        let Uri = "NEO4J_URI"
+        let User = "NEO4J_USER"
+        let Password = "NEO4J_PASSWORD"
+        let OutputDirectory = "OUTPUT_DIRECTORY"
+        // Deprecated - use OUTPUT_DIRECTORY instead
+        let OutputFile = "OUTPUT_FILE"
+        let MinDiskGb = "MIN_DISK_GB"
+        let MaxMemoryMb = "MAX_MEMORY_MB"
+
+        let SkipSchemaCollection =
+            "SKIP_SCHEMA_COLLECTION"
+
+        let MaxRetries = "MAX_RETRIES"
+        let RetryDelayMs = "RETRY_DELAY_MS"
+        let MaxRetryDelayMs = "MAX_RETRY_DELAY_MS"
+
+        let QueryTimeoutSeconds =
+            "QUERY_TIMEOUT_SECONDS"
+
+        let EnableDebugLogging = "DEBUG"
+        let ValidateJsonOutput = "VALIDATE_JSON"
+        let AllowInsecure = "ALLOW_INSECURE"
+        let BatchSize = "BATCH_SIZE"
+
+        let AverageRecordSize =
+            "NEO4J_EXPORT_AVG_RECORD_SIZE"
+
+        let OverheadMultiplier =
+            "NEO4J_EXPORT_OVERHEAD_MULTIPLIER"
+
+        let MinMemoryReservation =
+            "NEO4J_EXPORT_MIN_MEMORY_RESERVATION"
+
+        let JsonBufferSizeKb = "JSON_BUFFER_SIZE_KB"
+
+        // Path serialization safety thresholds
+        [<Literal>]
+        let MAX_PATH_LENGTH = "MAX_PATH_LENGTH"
+
+        [<Literal>]
+        let PATH_FULL_MODE_LIMIT =
+            "PATH_FULL_MODE_LIMIT"
+
+        [<Literal>]
+        let PATH_COMPACT_MODE_LIMIT =
+            "PATH_COMPACT_MODE_LIMIT"
+
+        [<Literal>]
+        let PATH_PROPERTY_DEPTH =
+            "PATH_PROPERTY_DEPTH"
+
+        // Nested graph element safety thresholds
+        [<Literal>]
+        let MAX_NESTED_DEPTH = "MAX_NESTED_DEPTH"
+
+        [<Literal>]
+        let NESTED_SHALLOW_MODE_DEPTH =
+            "NESTED_SHALLOW_MODE_DEPTH"
+
+        [<Literal>]
+        let NESTED_REFERENCE_MODE_DEPTH =
+            "NESTED_REFERENCE_MODE_DEPTH"
+
+        // Label truncation limits
+        [<Literal>]
+        let MAX_LABELS_PER_NODE =
+            "MAX_LABELS_PER_NODE"
+
+        [<Literal>]
+        let MAX_LABELS_IN_REFERENCE_MODE =
+            "MAX_LABELS_IN_REFERENCE_MODE"
+
+        [<Literal>]
+        let MAX_LABELS_IN_PATH_COMPACT =
+            "MAX_LABELS_IN_PATH_COMPACT"
+
+        // Collection limits
+        [<Literal>]
+        let MAX_COLLECTION_ITEMS =
+            "MAX_COLLECTION_ITEMS"
+
+    /// Default values for all configurable settings
+    module Defaults =
+        let Uri = "bolt://localhost:7687"
+        let User = "neo4j"
+        let Password = ""
+        let OutputDirectory = "."
+        let MinDiskGb = 10L
+        let MaxMemoryMb = 1024L
+        let SkipSchemaCollection = false
+        let MaxRetries = 5
+        let RetryDelayMs = 1000
+        let MaxRetryDelayMs = 30000
+        let QueryTimeoutSeconds = 300
+        let EnableDebugLogging = false
+        let ValidateJsonOutput = true
+        let AllowInsecure = false
+        let BatchSize = 10000
+        let ConservativeMemoryFallbackGb = 2L
+
+        let ConservativeMemoryFallback =
+            ConservativeMemoryFallbackGb
+            * 1024L
+            * 1024L
+            * 1024L
+
+        let MinimumMemoryReservationMb = 100L
+
+        let MinimumMemoryReservation =
+            MinimumMemoryReservationMb * 1024L * 1024L
+
+        let AverageRecordSizeBytes = 1024L
+        let ProcessingOverheadMultiplier = 2.0
+        let JsonBufferSizeKb = 16
+
+        // Path defaults
+        let MaxPathLength = 100000L
+        let PathFullModeLimit = 1000L
+        let PathCompactModeLimit = 10000L
+        let PathPropertyDepth = 5
+
+        // Nested element defaults
+        let MaxNestedDepth = 10
+        let NestedShallowModeDepth = 5
+        let NestedReferenceModeDepth = 8
+
+        // Label truncation defaults
+        let MaxLabelsPerNode = 100
+        let MaxLabelsInReferenceMode = 10
+        let MaxLabelsInPathCompact = 5
+
+        // Collection limits
+        let MaxCollectionItems = 10000
+
+    let getVersion () = App.Version
+    let getVersionString () = App.VersionString
+
+
+=================================================================================
+FILE: Neo4jExport/src/Types.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.Collections.Generic
+open System.Text.Json.Serialization
+open Neo4j.Driver
+
+/// Core domain types for Neo4j export operations
+
+// Serialization level types - no strings!
+[<Struct>]
+type PathSerializationLevel =
+    | Full
+    | Compact
+    | IdsOnly
+
+[<Struct>]
+type NestedSerializationLevel =
+    | Deep
+    | Shallow
+    | Reference
+
+type SerializationDepth = private SerializationDepth of int
+
+module SerializationDepth =
+    let zero = SerializationDepth 0
+    let increment (SerializationDepth d) = SerializationDepth(d + 1)
+    let value (SerializationDepth d) = d
+    let exceedsLimit limit (SerializationDepth d) = d >= limit
+
+type SerializationError =
+    | DepthExceeded of currentDepth: int * maxDepth: int
+    | PathTooLong of length: int64 * maxLength: int64
+    | CircularReference of nodeId: int64
+    | PropertySerializationFailed of key: string * error: string
+    | InvalidValue of message: string
+
+/// Simple JSON representation type for METADATA COLLECTION ONLY.
+/// WARNING: This type uses decimal for all numbers, which loses original numeric type information.
+/// DO NOT use for actual Neo4j data export - use Utf8JsonWriter directly for type-safe serialization.
+/// This is intentionally designed for metadata where JSON fidelity matters more than .NET type fidelity.
+type JsonValue =
+    | JString of string
+    | JNumber of decimal  // All numeric types converted to decimal for JSON compatibility
+    | JBool of bool
+    | JNull
+    | JObject of IDictionary<string, JsonValue>
+    | JArray of JsonValue list
+
+type GraphElement =
+    | Node of INode
+    | Relationship of IRelationship
+    | Path of IPath
+
+/// For tracking in-progress exports
+type ExportProgress =
+    { RecordsProcessed: int64
+      RecordsSkipped: int64
+      BytesWritten: int64
+      StartTime: DateTime }
+
+/// For completed exports only
+type CompletedExportStats =
+    { RecordsProcessed: int64
+      RecordsSkipped: int64
+      BytesWritten: int64
+      StartTime: DateTime
+      EndTime: DateTime
+      Duration: TimeSpan }
+
+/// Helper functions for export statistics
+module ExportStats =
+    /// Convert in-progress export to completed stats
+    let complete (progress: ExportProgress) (endTime: DateTime) : CompletedExportStats =
+        { RecordsProcessed = progress.RecordsProcessed
+          RecordsSkipped = progress.RecordsSkipped
+          BytesWritten = progress.BytesWritten
+          StartTime = progress.StartTime
+          EndTime = endTime
+          Duration = endTime - progress.StartTime }
+
+type ExportConfig =
+    { Uri: Uri
+      User: string
+      Password: string
+      OutputDirectory: string
+      MinDiskGb: int64
+      MaxMemoryMb: int64
+      SkipSchemaCollection: bool
+      MaxRetries: int
+      RetryDelayMs: int
+      MaxRetryDelayMs: int
+      QueryTimeoutSeconds: int
+      EnableDebugLogging: bool
+      ValidateJsonOutput: bool
+      AllowInsecure: bool
+      BatchSize: int
+      JsonBufferSizeKb: int
+
+      // Path serialization thresholds
+      MaxPathLength: int64
+      PathFullModeLimit: int64
+      PathCompactModeLimit: int64
+      PathPropertyDepth: int
+
+      // Nested element thresholds
+      MaxNestedDepth: int
+      NestedShallowModeDepth: int
+      NestedReferenceModeDepth: int
+
+      // Collection limits
+      MaxCollectionItems: int
+
+      // Label truncation limits
+      MaxLabelsPerNode: int
+      MaxLabelsInReferenceMode: int
+      MaxLabelsInPathCompact: int }
+
+/// All possible application errors
+type AppError =
+    | ConfigError of message: string
+    | ConnectionError of message: string * exn: exn option
+    | AuthenticationError of message: string
+    | QueryError of query: string * message: string * exn: exn option
+    | DataCorruptionError of line: int * message: string * sample: string option
+    | DiskSpaceError of required: int64 * available: int64
+    | MemoryError of message: string
+    | ExportError of message: string * exn: exn option
+    | FileSystemError of path: string * message: string * exn: exn option
+    | SecurityError of message: string
+    | TimeoutError of operation: string * duration: TimeSpan
+
+/// Mutable context for managing application lifecycle and cleanup
+type ApplicationContext =
+    { CancellationTokenSource: System.Threading.CancellationTokenSource
+      TempFiles: System.Collections.Concurrent.ConcurrentBag<string>
+      ActiveProcesses: System.Collections.Concurrent.ConcurrentBag<System.Diagnostics.Process> }
+
+    interface IDisposable with
+        member this.Dispose() =
+            try
+                this.CancellationTokenSource.Dispose()
+            with ex ->
+                eprintfn "[WARN] Failed to dispose CancellationTokenSource: %s" ex.Message
+
+            for tempFile in this.TempFiles do
+                try
+                    if System.IO.File.Exists(tempFile) then
+                        System.IO.File.Delete(tempFile)
+                with ex ->
+                    eprintfn "[WARN] Failed to delete temporary file '%s': %s" tempFile ex.Message
+
+            for proc in this.ActiveProcesses do
+                try
+                    if not proc.HasExited then
+                        proc.Kill()
+
+                    proc.Dispose()
+                with ex ->
+                    eprintfn "[WARN] Failed to terminate/dispose process (PID %d): %s" proc.Id ex.Message
+
+type ExportScriptMetadata =
+    { [<JsonPropertyName("name")>]
+      Name: string
+      [<JsonPropertyName("version")>]
+      Version: string
+      [<JsonPropertyName("checksum")>]
+      Checksum: string
+      [<JsonPropertyName("runtime_version")>]
+      RuntimeVersion: string }
+
+type FormatInfo =
+    { [<JsonPropertyName("type")>]
+      Type: string
+      [<JsonPropertyName("metadata_line")>]
+      MetadataLine: int }
+
+type ExportMetadata =
+    { [<JsonPropertyName("export_id")>]
+      ExportId: Guid
+      [<JsonPropertyName("export_timestamp_utc")>]
+      ExportTimestampUtc: DateTime
+      [<JsonPropertyName("export_mode")>]
+      ExportMode: string
+      [<JsonPropertyName("format")>]
+      Format: FormatInfo option }
+
+type DatabaseMetadata =
+    { [<JsonPropertyName("name")>]
+      Name: string }
+
+type SourceSystemMetadata =
+    { [<JsonPropertyName("type")>]
+      Type: string
+      [<JsonPropertyName("version")>]
+      Version: string
+      [<JsonPropertyName("edition")>]
+      Edition: string
+      [<JsonPropertyName("database")>]
+      Database: DatabaseMetadata }
+
+type EnvironmentMetadata =
+    { [<JsonPropertyName("hostname")>]
+      Hostname: string
+      [<JsonPropertyName("operating_system")>]
+      OperatingSystem: string
+      [<JsonPropertyName("user")>]
+      User: string
+      [<JsonPropertyName("runtime")>]
+      Runtime: string
+      [<JsonPropertyName("processors")>]
+      Processors: int
+      [<JsonPropertyName("memory_gb")>]
+      MemoryGb: float }
+
+type SecurityMetadata =
+    { [<JsonPropertyName("encryption_enabled")>]
+      EncryptionEnabled: bool
+      [<JsonPropertyName("auth_method")>]
+      AuthMethod: string
+      [<JsonPropertyName("data_validation")>]
+      DataValidation: bool }
+
+type FileLevelStatistics =
+    { [<JsonPropertyName("label")>]
+      Label: string
+      [<JsonPropertyName("record_count")>]
+      RecordCount: int64
+      [<JsonPropertyName("bytes_written")>]
+      BytesWritten: int64
+      [<JsonPropertyName("export_duration_ms")>]
+      ExportDurationMs: int64 }
+
+type ExportManifestDetails =
+    { [<JsonPropertyName("total_export_duration_seconds")>]
+      TotalExportDurationSeconds: float
+      [<JsonPropertyName("file_statistics")>]
+      FileStatistics: FileLevelStatistics list }
+
+/// Error summary for the export
+type ErrorSummary =
+    { [<JsonPropertyName("error_count")>]
+      ErrorCount: int64
+      [<JsonPropertyName("warning_count")>]
+      WarningCount: int64
+      [<JsonPropertyName("has_errors")>]
+      HasErrors: bool }
+/// Reserved metadata for future use
+type ReservedMetadata =
+    { Purpose: string
+      Padding: string option }
+
+/// Defines a record type that can appear in the JSONL file
+type RecordTypeDefinition =
+    { [<JsonPropertyName("type_name")>]
+      TypeName: string
+      [<JsonPropertyName("description")>]
+      Description: string
+      [<JsonPropertyName("required_fields")>]
+      RequiredFields: string list
+      [<JsonPropertyName("optional_fields")>]
+      OptionalFields: string list option }
+
+/// Compression hints for the exported file
+type CompressionHints =
+    { [<JsonPropertyName("recommended")>]
+      Recommended: string
+      [<JsonPropertyName("compatible")>]
+      Compatible: string list
+      [<JsonPropertyName("expected_ratio")>]
+      ExpectedRatio: float option
+      [<JsonPropertyName("suffix")>]
+      Suffix: string }
+
+/// Backward compatibility information
+type CompatibilityInfo =
+    { [<JsonPropertyName("minimum_reader_version")>]
+      MinimumReaderVersion: string
+      [<JsonPropertyName("deprecated_fields")>]
+      DeprecatedFields: string list
+      [<JsonPropertyName("breaking_change_version")>]
+      BreakingChangeVersion: string }
+
+/// Error record for tracking export issues
+type ErrorRecord =
+    { [<JsonPropertyName("type")>]
+      Type: string // "error" or "warning"
+      [<JsonPropertyName("timestamp")>]
+      Timestamp: DateTime
+      [<JsonPropertyName("line")>]
+      Line: int64 option
+      [<JsonPropertyName("message")>]
+      Message: string
+      [<JsonPropertyName("details")>]
+      Details: IDictionary<string, JsonValue> option
+      [<JsonPropertyName("element_id")>]
+      ElementId: string option }
+
+/// Immutable state for tracking line numbers functionally
+type LineTrackingState =
+    { CurrentLine: int64
+      RecordTypeStartLines: Map<string, int64> }
+
+/// Helper module for functional line tracking
+module LineTracking =
+    let create () =
+        { CurrentLine = 2L
+          RecordTypeStartLines = Map.empty }
+
+    let incrementLine state =
+        { state with
+            CurrentLine = state.CurrentLine + 1L }
+
+    let recordTypeStart (recordType: string) (state: LineTrackingState) =
+        if state.RecordTypeStartLines.ContainsKey(recordType) then
+            state
+        else
+            { state with
+                RecordTypeStartLines = state.RecordTypeStartLines.Add(recordType, state.CurrentLine) }
+
+/// Immutable state for error tracking with agent pattern
+type ErrorTrackingState =
+    { Errors: ErrorRecord list
+      ErrorCount: int64
+      WarningCount: int64
+      CurrentLine: int64 }
+
+/// Messages for error tracking agent
+type ErrorTrackingMessage =
+    | AddError of
+        message: string *
+        elementId: string option *
+        details: IDictionary<string, JsonValue> option *
+        AsyncReplyChannel<unit>
+    | AddWarning of
+        message: string *
+        elementId: string option *
+        details: IDictionary<string, JsonValue> option *
+        AsyncReplyChannel<unit>
+    | IncrementLine of AsyncReplyChannel<unit>
+    | GetState of AsyncReplyChannel<ErrorTrackingState>
+
+/// Messages for resource monitoring agent
+type MonitoringMessage =
+    | CheckResources of AsyncReplyChannel<Result<unit, string>>
+    | Stop
+
+/// State for resource monitoring
+type ResourceState =
+    { LastCheck: DateTime; IsRunning: bool }
+
+type FullMetadata =
+    { [<JsonPropertyName("format_version")>]
+      FormatVersion: string
+      [<JsonPropertyName("export_metadata")>]
+      ExportMetadata: ExportMetadata
+      [<JsonPropertyName("producer")>]
+      Producer: ExportScriptMetadata
+      [<JsonPropertyName("source_system")>]
+      SourceSystem: SourceSystemMetadata
+      [<JsonPropertyName("database_statistics")>]
+      DatabaseStatistics: IDictionary<string, JsonValue>
+      [<JsonPropertyName("database_schema")>]
+      DatabaseSchema: IDictionary<string, JsonValue>
+      [<JsonPropertyName("environment")>]
+      Environment: EnvironmentMetadata
+      [<JsonPropertyName("security")>]
+      Security: SecurityMetadata
+      [<JsonPropertyName("export_manifest")>]
+      ExportManifest: ExportManifestDetails option
+      [<JsonPropertyName("error_summary")>]
+      ErrorSummary: ErrorSummary option
+      [<JsonPropertyName("supported_record_types")>]
+      RecordTypes: RecordTypeDefinition list
+      [<JsonPropertyName("compatibility")>]
+      Compatibility: CompatibilityInfo
+      [<JsonPropertyName("compression")>]
+      Compression: CompressionHints
+      [<JsonPropertyName("_reserved")>]
+      Reserved: ReservedMetadata option }
+
+
+=================================================================================
+FILE: Neo4jExport/src/Log.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+
+/// Structured logging with thread-safe console output and level filtering
+module Log =
+    type private LogLevel =
+        | Debug
+        | Info
+        | Warn
+        | Error
+        | Fatal
+
+    let private scriptName =
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Name
+
+    let mutable private minLevel = LogLevel.Info
+    let private consoleLock = obj ()
+
+    /// Sets the minimum log level from a string value
+    let setMinLevel levelStr =
+        minLevel <-
+            match levelStr with
+            | "Debug"
+            | "debug" -> LogLevel.Debug
+            | "Info"
+            | "info" -> LogLevel.Info
+            | "Warn"
+            | "warn" -> LogLevel.Warn
+            | "Error"
+            | "error" -> LogLevel.Error
+            | "Fatal"
+            | "fatal" -> LogLevel.Fatal
+            | _ -> LogLevel.Info
+
+    let private shouldLog level = level >= minLevel
+
+    let private logInternal level message =
+        if shouldLog level then
+            lock consoleLock (fun () ->
+                let timestamp =
+                    DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'")
+
+                let levelStr =
+                    match level with
+                    | LogLevel.Debug -> "DEBUG"
+                    | LogLevel.Info -> "INFO"
+                    | LogLevel.Warn -> "WARN"
+                    | LogLevel.Error -> "ERROR"
+                    | LogLevel.Fatal -> "FATAL"
+
+                let color =
+                    match level with
+                    | LogLevel.Debug -> ConsoleColor.Gray
+                    | LogLevel.Info -> ConsoleColor.White
+                    | LogLevel.Warn -> ConsoleColor.Yellow
+                    | LogLevel.Error -> ConsoleColor.Red
+                    | LogLevel.Fatal -> ConsoleColor.Magenta
+
+                Console.ForegroundColor <- color
+                eprintfn "[%s] [%s] [%s] %s" timestamp levelStr scriptName message
+                Console.ResetColor())
+
+    let debug message = logInternal LogLevel.Debug message
+    let info message = logInternal LogLevel.Info message
+    let warn message = logInternal LogLevel.Warn message
+    let error message = logInternal LogLevel.Error message
+    let fatal message = logInternal LogLevel.Fatal message
+
+    /// Logs an exception with optional stack trace based on current log level
+    let logException (ex: exn) =
+        error (sprintf "Exception: %s" ex.Message)
+
+        if shouldLog LogLevel.Debug then
+            error (sprintf "StackTrace: %s" ex.StackTrace)
+
+            match ex.InnerException with
+            | null -> ()
+            | inner -> error (sprintf "InnerException: %s" inner.Message)
+
+
+=================================================================================
+FILE: Neo4jExport/src/Utils.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.IO
+open System.Security.Cryptography
+open System.Reflection
+open System.Threading.Tasks
+
+module Utils =
+    let getScriptChecksum (cancellationToken: System.Threading.CancellationToken) : Task<string> =
+        task {
+            try
+                let assembly =
+                    Assembly.GetExecutingAssembly()
+
+                use stream =
+                    File.OpenRead(assembly.Location)
+
+                let! hash = SHA256.HashDataAsync(stream, cancellationToken)
+                return BitConverter.ToString(hash).Replace("-", "").ToLower()
+            with
+            | :? IOException as ex ->
+                Log.warn (sprintf "Could not compute script checksum due to I/O error: %s" ex.Message)
+                return "unknown"
+            | :? UnauthorizedAccessException as ex ->
+                Log.warn (sprintf "Could not compute script checksum due to permissions error: %s" ex.Message)
+                return "unknown"
+            | :? OperationCanceledException ->
+                Log.debug "Script checksum computation was cancelled"
+                return "unknown"
+            | ex ->
+                Log.error (
+                    sprintf
+                        "An unexpected error occurred while computing script checksum: %s (%s)"
+                        ex.Message
+                        (ex.GetType().Name)
+                )
+
+                return "unknown"
+        }
+
+    let getEnvVar name defaultValue =
+        match Environment.GetEnvironmentVariable(name) with
+        | null
+        | "" -> defaultValue
+        | value -> value
+
+    let formatBytes (bytes: int64) =
+        let units =
+            [| "B"; "KB"; "MB"; "GB"; "TB"; "PB" |]
+
+        let rec findUnit (size: decimal) unitIndex =
+            if size >= 1024.0m && unitIndex < units.Length - 1 then
+                findUnit (size / 1024.0m) (unitIndex + 1)
+            else
+                let roundedSize = Decimal.Round(size, 2)
+                sprintf "%M %s" roundedSize units.[unitIndex]
+
+        if bytes < 0L then
+            "Invalid (negative size)"
+        else
+            findUnit (decimal bytes) 0
+
+    let ensureDirectoryExists (path: string) =
+        try
+            let dir = Path.GetDirectoryName(path)
+
+            if not (String.IsNullOrWhiteSpace(dir)) then
+                Directory.CreateDirectory(dir) |> ignore
+
+            Result.Ok()
+        with
+        | :? ArgumentException as ex ->
+            Result.Error(FileSystemError(path, sprintf "Invalid path format: %s" ex.Message, Some ex))
+        | :? PathTooLongException as ex -> Result.Error(FileSystemError(path, "Path exceeds system limits", Some ex))
+        | :? DirectoryNotFoundException as ex ->
+            Result.Error(FileSystemError(path, "Parent directory not found", Some ex))
+        | :? IOException as ex ->
+            Result.Error(FileSystemError(path, sprintf "I/O error creating directory: %s" ex.Message, Some ex))
+        | :? UnauthorizedAccessException as ex ->
+            Result.Error(FileSystemError(path, "Insufficient permissions to create directory", Some ex))
+        | :? NotSupportedException as ex ->
+            Result.Error(FileSystemError(path, sprintf "Path format not supported: %s" ex.Message, Some ex))
+
+
+=================================================================================
+FILE: Neo4jExport/src/JsonConfig.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System.Text.Json
+open System.Text.Json.Serialization
+open System.Text.Encodings.Web
+
+module JsonConfig =
+
+    /// Creates JSON options for data export with UnsafeRelaxedJsonEscaping
+    /// to preserve data exactly as stored in Neo4j without HTML escaping.
+    let createDataExportJsonOptions () =
+        let options = JsonSerializerOptions()
+        options.WriteIndented <- false
+        options.DefaultIgnoreCondition <- JsonIgnoreCondition.WhenWritingNull
+        options.Encoder <- JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        options
+
+    let createWriterOptions () =
+        JsonWriterOptions(
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            Indented = false,
+            SkipValidation = false
+        )
+
+    let toSerializableMetadata (metadata: FullMetadata) =
+        {| export_metadata = metadata.ExportMetadata
+           source_system = metadata.SourceSystem
+           database_statistics =
+            metadata.DatabaseStatistics
+            |> Seq.map (fun kvp -> kvp.Key, JsonHelpers.fromJsonValue kvp.Value)
+            |> dict
+           database_schema =
+            metadata.DatabaseSchema
+            |> Seq.map (fun kvp -> kvp.Key, JsonHelpers.fromJsonValue kvp.Value)
+            |> dict
+           environment = metadata.Environment
+           security = metadata.Security
+           export_manifest = metadata.ExportManifest |}
+    let calculateDirectPaddingBytes (baseMetadataSize: int) (targetSize: int) : Result<int, string> =
+        let jsonOverhead = 13 // ,"padding":""
+
+        let availableSpace =
+            targetSize - baseMetadataSize - jsonOverhead
+
+        if availableSpace < 0 then
+            Error(sprintf "Metadata too large: %d bytes, max %d bytes" baseMetadataSize targetSize)
+        elif availableSpace = 0 then
+            Ok(0)
+        else
+            Ok(availableSpace)
+
+
+=================================================================================
+FILE: Neo4jExport/src/JsonHelpers.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.Collections
+open System.Collections.Generic
+open System.Text.Json
+open Neo4j.Driver
+
+/// Helper functions for working with JsonValue type - FOR METADATA COLLECTION ONLY!
+/// WARNING: These functions are designed for metadata serialization where JSON fidelity
+/// matters more than .NET type fidelity. All numbers are converted to decimal.
+/// DO NOT use these for actual Neo4j data export - use Utf8JsonWriter directly instead.
+module JsonHelpers =
+    /// Convert arbitrary objects to JsonValue for METADATA ONLY.
+    /// NOTE: All numeric types are converted to decimal for JSON compatibility.
+    /// This intentionally loses .NET type information but preserves JSON numeric fidelity.
+    let rec toJsonValue (obj: obj) : Result<JsonValue, string> =
+        match obj with
+        | null -> Ok JNull
+        | :? string as s -> Ok(JString s)
+        | :? int as i -> Ok(JNumber(decimal i))
+        | :? int64 as l -> Ok(JNumber(decimal l))
+        | :? decimal as d -> Ok(JNumber d)
+        | :? float as f -> Ok(JNumber(decimal f))
+        | :? bool as b -> Ok(JBool b)
+        | :? DateTime as dt -> Ok(JString(dt.ToString("O")))
+        | :? DateTimeOffset as dto -> Ok(JString(dto.ToString("O")))
+        | :? TimeSpan as ts -> Ok(JString(ts.ToString()))
+        | :? Guid as g -> Ok(JString(g.ToString()))
+        | :? Point as p ->
+            Ok(
+                JObject(
+                    dict
+                        [ "type", JString "Point"
+                          "coordinates",
+                          JArray
+                              [ JNumber(decimal p.X)
+                                JNumber(decimal p.Y) ]
+                          "srid", JNumber(decimal p.SrId) ]
+                )
+            )
+        | :? LocalDate as ld -> Ok(JString(ld.ToString()))
+        | :? LocalTime as lt -> Ok(JString(lt.ToString()))
+        | :? LocalDateTime as ldt -> Ok(JString(ldt.ToString()))
+        | :? ZonedDateTime as zdt -> Ok(JString(zdt.ToString()))
+        | :? Duration as dur -> Ok(JString(dur.ToString()))
+        | :? OffsetTime as ot -> Ok(JString(ot.ToString()))
+        | :? IDictionary<string, obj> as d ->
+            d
+            |> Seq.map (fun kvp ->
+                match toJsonValue kvp.Value with
+                | Ok v -> Ok(kvp.Key, v)
+                | Error e -> Error e)
+            |> Seq.fold
+                (fun acc curr ->
+                    match acc, curr with
+                    | Ok items, Ok item -> Ok(item :: items)
+                    | Error e, _ -> Error e
+                    | _, Error e -> Error e)
+                (Ok [])
+            |> Result.map (fun items -> JObject(dict (List.rev items)))
+        | :? IEnumerable as list ->
+            list
+            |> Seq.cast<obj>
+            |> Seq.map toJsonValue
+            |> Seq.fold
+                (fun acc curr ->
+                    match acc, curr with
+                    | Ok items, Ok item -> Ok(item :: items)
+                    | Error e, _ -> Error e
+                    | _, Error e -> Error e)
+                (Ok [])
+            |> Result.map (List.rev >> JArray)
+        | _ -> Error(sprintf "Unsupported type for JSON conversion: %s" (obj.GetType().FullName))
+
+    /// Convert arbitrary objects to type-safe JsonValue with a default fallback.
+    /// This avoids exceptions for non-critical conversions while providing error visibility.
+    let toJsonValueWithDefault (defaultValue: JsonValue) (logWarning: string -> unit) (obj: obj) : JsonValue =
+        match toJsonValue obj with
+        | Ok value -> value
+        | Error msg ->
+            logWarning (sprintf "JSON conversion failed for type '%s', using default value. Error: %s" (obj.GetType().FullName) msg)
+            defaultValue
+
+    /// Extract string value from JsonValue - Result version
+    let tryGetString (value: JsonValue) : Result<string, string> =
+        match value with
+        | JString s -> Ok s
+        | _ -> Error "Value is not a string"
+    /// Extract int64 value from JsonValue - Result version
+    let tryGetInt64 (value: JsonValue) : Result<int64, string> =
+        match value with
+        | JNumber n ->
+            try
+                Ok(int64 n)
+            with _ ->
+                Error "Cannot convert number to int64"
+        | _ -> Error "Value is not a number"
+
+    /// Convert JsonValue back to obj for JSON serialization - FOR METADATA ONLY!
+    /// WARNING: All JNumber values return as decimal, regardless of original type.
+    /// This is intentional for metadata serialization but unsuitable for type-safe data export.
+    let rec fromJsonValue (value: JsonValue) : obj =
+        match value with
+        | JNull -> null
+        | JString s -> box s
+        | JNumber n -> box n
+        | JBool b -> box b
+        | JObject d ->
+            d
+            |> Seq.map (fun kvp -> kvp.Key, fromJsonValue kvp.Value)
+            |> dict
+            |> box
+        | JArray list ->
+            list
+            |> List.map fromJsonValue
+            |> List.toArray
+            |> box
+
+    /// Write JsonValue directly to Utf8JsonWriter for optimal performance
+    let rec writeJsonValue (writer: Utf8JsonWriter) (value: JsonValue) =
+        match value with
+        | JNull -> writer.WriteNullValue()
+        | JString s -> writer.WriteStringValue(s)
+        | JNumber n -> writer.WriteNumberValue(n)
+        | JBool b -> writer.WriteBooleanValue(b)
+        | JObject dict ->
+            writer.WriteStartObject()
+
+            for kvp in dict do
+                writer.WritePropertyName(kvp.Key)
+                writeJsonValue writer kvp.Value
+
+            writer.WriteEndObject()
+        | JArray list ->
+            writer.WriteStartArray()
+
+            for item in list do
+                writeJsonValue writer item
+
+            writer.WriteEndArray()
+
+
+=================================================================================
+FILE: Neo4jExport/src/RecordTypes.fs
+=================================================================================
+
+
+module Neo4jExport.RecordTypes
+
+open Neo4jExport
+
+let standardRecordTypes: RecordTypeDefinition list =
+    [ { TypeName = "node"
+        Description = "A graph node with labels and properties"
+        RequiredFields =
+          [ "type"
+            "element_id"
+            "export_id"
+            "labels"
+            "properties" ]
+        OptionalFields = None }
+
+      { TypeName = "relationship"
+        Description = "A directed relationship between two nodes"
+        RequiredFields =
+          [ "type"
+            "element_id"
+            "export_id"
+            "label"
+            "start_element_id"
+            "end_element_id"
+            "properties" ]
+        OptionalFields = None }
+
+      { TypeName = "error"
+        Description = "An error that occurred during export"
+        RequiredFields = [ "type"; "timestamp"; "message" ]
+        OptionalFields = Some [ "line"; "details"; "element_id" ] }
+
+      { TypeName = "warning"
+        Description = "A warning that occurred during export"
+        RequiredFields = [ "type"; "timestamp"; "message" ]
+        OptionalFields = Some [ "line"; "details"; "element_id" ] } ]
+
+let getRecordTypes () = standardRecordTypes
+
+
+=================================================================================
+FILE: Neo4jExport/src/Security.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.IO
+open System.Text
+open System.Runtime.InteropServices
+
+module Security =
+
+    /// Sanitizes strings for safe logging by replacing control characters
+    let sanitizeForLogging (str: string) (maxLength: int) : string =
+        if String.IsNullOrEmpty(str) then
+            "<empty>"
+        else
+            let sb =
+                StringBuilder(min str.Length maxLength)
+
+            let mutable charCount = 0
+
+            for c in str do
+                if charCount >= maxLength then
+                    ()
+                elif Char.IsControl(c) then
+                    match c with
+                    | '\r' -> sb.Append("\\r") |> ignore
+                    | '\n' -> sb.Append("\\n") |> ignore
+                    | '\t' -> sb.Append("\\t") |> ignore
+                    | '\000' -> sb.Append("\\0") |> ignore
+                    | _ -> sb.AppendFormat("\\u{0:X4}", int c) |> ignore
+
+                    charCount <- charCount + 1
+                else
+                    sb.Append(c) |> ignore
+                    charCount <- charCount + 1
+
+            if str.Length > maxLength then
+                sb.Append("...").ToString()
+            else
+                sb.ToString()
+    /// Validates path syntax for the current operating system
+    let validatePathSyntax (path: string) : Result<string, AppError> =
+        if String.IsNullOrWhiteSpace(path) then
+            Error(SecurityError "Path cannot be empty")
+        else
+            try
+                Ok(Path.GetFullPath(path))
+            with
+            | :? ArgumentException
+            | :? ArgumentNullException
+            | :? NotSupportedException
+            | :? PathTooLongException
+            | :? System.Security.SecurityException as ex -> Error(SecurityError(sprintf "Invalid path: %s" ex.Message))
+
+
+=================================================================================
+FILE: Neo4jExport/src/ErrorTracking.fs
+=================================================================================
+
+
+module Neo4jExport.ErrorTracking
+
+open System
+open System.Collections.Generic
+open Neo4jExport
+
+/// Thread-safe error tracking using F# agents
+type ErrorTracker() =
+    let agent =
+        MailboxProcessor.Start(fun inbox ->
+            let rec loop (state: ErrorTrackingState) =
+                async {
+                    let! msg = inbox.Receive()
+
+                    match msg with
+                    | AddError(message, elementId, details, reply) ->
+                        let error =
+                            { Type = "error"
+                              Timestamp = DateTime.UtcNow
+                              Line = Some state.CurrentLine
+                              Message = message
+                              Details = details
+                              ElementId = elementId }
+
+                        reply.Reply()
+
+                        return!
+                            loop
+                                { state with
+                                    Errors = error :: state.Errors
+                                    ErrorCount = state.ErrorCount + 1L }
+
+                    | AddWarning(message, elementId, details, reply) ->
+                        let warning =
+                            { Type = "warning"
+                              Timestamp = DateTime.UtcNow
+                              Line = Some state.CurrentLine
+                              Message = message
+                              Details = details
+                              ElementId = elementId }
+
+                        reply.Reply()
+
+                        return!
+                            loop
+                                { state with
+                                    Errors = warning :: state.Errors
+                                    WarningCount = state.WarningCount + 1L }
+
+                    | IncrementLine reply ->
+                        reply.Reply()
+
+                        return!
+                            loop
+                                { state with
+                                    CurrentLine = state.CurrentLine + 1L }
+
+                    | GetState reply ->
+                        reply.Reply(state)
+                        return! loop state
+                }
+
+            loop
+                { Errors = []
+                  ErrorCount = 0L
+                  WarningCount = 0L
+                  CurrentLine = 1L })
+
+    member _.AddError(message, ?elementId, ?details) =
+        agent.PostAndReply(fun ch -> AddError(message, elementId, details, ch))
+
+    member _.AddWarning(message, ?elementId, ?details) =
+        agent.PostAndReply(fun ch -> AddWarning(message, elementId, details, ch))
+
+    member _.IncrementLine() = agent.PostAndReply(IncrementLine)
+
+    member _.GetErrors() =
+        let state = agent.PostAndReply(GetState)
+        state.Errors |> List.rev // Reverse to maintain original order
+
+    member _.GetErrorCount() =
+        let state = agent.PostAndReply(GetState)
+        state.ErrorCount
+
+    member _.GetWarningCount() =
+        let state = agent.PostAndReply(GetState)
+        state.WarningCount
+
+    member _.HasErrors() =
+        let state = agent.PostAndReply(GetState)
+        state.ErrorCount > 0L || state.WarningCount > 0L
+
+    interface IDisposable with
+        member _.Dispose() = (agent :> IDisposable).Dispose()
+
+
+=================================================================================
+FILE: Neo4jExport/src/LabelStatsTracker.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+
+/// Tracks export statistics per label during the export process
+module LabelStatsTracker =
+    type private LabelState =
+        | NotStarted
+        | InProgress of startTime: DateTime * recordCount: int64 * bytesWritten: int64
+        | Completed of stats: FileLevelStatistics
+
+    type Tracker =
+        private
+            { states: Map<string, LabelState> }
+
+    let create () = { states = Map.empty }
+
+    let startLabel (label: string) (tracker: Tracker) : Tracker =
+        match Map.tryFind label tracker.states with
+        | None
+        | Some NotStarted ->
+            { tracker with
+                states =
+                    tracker.states
+                    |> Map.add label (InProgress(DateTime.UtcNow, 0L, 0L)) }
+        | _ -> tracker
+
+    let updateLabel (label: string) (recordCount: int64) (bytesWritten: int64) (tracker: Tracker) : Tracker =
+        match Map.tryFind label tracker.states with
+        | Some(InProgress(startTime, currentCount, currentBytes)) ->
+            { tracker with
+                states =
+                    tracker.states
+                    |> Map.add label (InProgress(startTime, currentCount + recordCount, currentBytes + bytesWritten)) }
+        | _ ->
+            Log.warn (sprintf "Attempted to update label '%s' that was not started or already completed" label)
+            tracker
+
+    let completeLabel (label: string) (tracker: Tracker) : Tracker * FileLevelStatistics option =
+        match Map.tryFind label tracker.states with
+        | Some(InProgress(startTime, recordCount, bytesWritten)) ->
+            let duration =
+                (DateTime.UtcNow - startTime).TotalMilliseconds
+                |> int64
+
+            let stats =
+                { Label = label
+                  RecordCount = recordCount
+                  BytesWritten = bytesWritten
+                  ExportDurationMs = duration }
+
+            let newTracker =
+                { tracker with
+                    states = tracker.states |> Map.add label (Completed stats) }
+
+            (newTracker, Some stats)
+        | _ -> (tracker, None)
+
+    let getCompletedStats (tracker: Tracker) : FileLevelStatistics list =
+        tracker.states
+        |> Map.toList
+        |> List.choose (fun (label, state) ->
+            match state with
+            | Completed stats -> Some stats
+            | _ -> None)
+
+    let completeAllInProgress (tracker: Tracker) : Tracker =
+        tracker.states
+        |> Map.toList
+        |> List.fold
+            (fun currentTracker (label, state) ->
+                match state with
+                | InProgress _ ->
+                    let newTracker, _ =
+                        completeLabel label currentTracker
+
+                    newTracker
+                | _ -> currentTracker)
+            tracker
+
+    let finalizeAndGetAllStats (tracker: Tracker) : FileLevelStatistics list =
+        let finalizedTracker =
+            completeAllInProgress tracker
+
+        getCompletedStats finalizedTracker
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Serialization/Context.fs
+=================================================================================
+
+
+module Neo4jExport.SerializationContext
+
+open System
+open System.Text.Json
+open System.Collections.Generic
+open Neo4jExport
+open Neo4jExport.ExportTypes
+open Neo4jExport.ExportUtils
+open JsonHelpers
+open ErrorTracking
+
+let createWriterContext config errorTracker exportId =
+    { Config = config
+      ErrorTracker = errorTracker
+      ExportId = exportId }
+
+let determineNestedLevel (depth: SerializationDepth) (config: ExportConfig) : NestedSerializationLevel =
+    let d = SerializationDepth.value depth
+
+    if d >= config.NestedReferenceModeDepth then Reference
+    elif d >= config.NestedShallowModeDepth then Shallow
+    else Deep
+
+let determinePathLevel (nodeCount: int) (config: ExportConfig) : PathSerializationLevel =
+    if int64 nodeCount > config.PathCompactModeLimit then
+        IdsOnly
+    elif int64 nodeCount > config.PathFullModeLimit then
+        Compact
+    else
+        Full
+
+let writeSerializationError (writer: Utf8JsonWriter) (errorType: string) (context: string) =
+    writer.WriteStartObject()
+    writer.WriteString("_error", "unrecoverable_serialization_failure")
+    writer.WriteString("_error_type", errorType)
+    writer.WriteString("_context", context)
+    writer.WriteEndObject()
+
+let writeDepthExceeded (writer: Utf8JsonWriter) (value: obj) (depth: SerializationDepth) =
+    writer.WriteStartObject()
+    writer.WriteString("_truncated", "depth_limit")
+    writer.WriteNumber("_depth", SerializationDepth.value depth)
+
+    writer.WriteString(
+        "_type",
+        try
+            if value = null then "null" else value.GetType().FullName
+        with _ ->
+            "unknown"
+    )
+
+    writer.WriteEndObject()
+
+let writeUnknownType (writer: Utf8JsonWriter) (value: obj) =
+    writer.WriteStartObject()
+
+    writer.WriteString(
+        "_type",
+        try
+            value.GetType().FullName
+        with _ ->
+            "unknown"
+    )
+
+    writer.WriteString(
+        "_assembly",
+        try
+            value.GetType().Assembly.GetName().Name
+        with _ ->
+            "unknown"
+    )
+
+    writer.WriteString("_note", "unserializable_type")
+    writer.WriteEndObject()
+
+let createErrorContext (elementId: string option) (additionalInfo: (string * obj) list) =
+    let details =
+        Dictionary<string, JsonValue>()
+
+    additionalInfo
+    |> List.iter (fun (key, value) ->
+        match JsonHelpers.toJsonValue value with
+        | Ok jsonValue -> details.[key] <- jsonValue
+        | Error _ -> details.[key] <- JString(value.ToString()))
+
+    if details.Count > 0 then
+        Some(details :> IDictionary<string, JsonValue>)
+    else
+        None
+
+let trackSerializationError
+    (errorTracker: ErrorTracker)
+    (message: string)
+    (elementId: string)
+    (entityType: string)
+    (exceptionType: string)
+    =
+    let context =
+        [ "entity_type", box entityType
+          "exception_type", box exceptionType
+          "serialization_phase", box "write" ]
+
+    let details =
+        createErrorContext (Some elementId) context
+
+    errorTracker.AddError(message, ?elementId = Some elementId, ?details = details)
+
+let handleSerializationError (writer: Utf8JsonWriter) (ex: exn) (depth: SerializationDepth) =
+    try
+        writer.WriteStartObject()
+        writer.WriteString("_serialization_error", ex.GetType().Name)
+        writer.WriteString("_at_depth", string (SerializationDepth.value depth))
+        writer.WriteEndObject()
+    with _ ->
+        writeSerializationError writer "catastrophic" (sprintf "depth_%d" (SerializationDepth.value depth))
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Serialization/Primitives.fs
+=================================================================================
+
+
+module Neo4jExport.SerializationPrimitives
+
+open System
+open System.Text
+open System.Text.Json
+open System.Runtime.CompilerServices
+open Neo4jExport
+open Neo4jExport.ExportUtils
+
+[<Literal>]
+let private MaxStringLength = 10_000_000
+
+[<Literal>]
+let private MaxBinaryLength = 50_000_000
+
+let serializeNull (writer: Utf8JsonWriter) = writer.WriteNullValue()
+
+let serializeBoolean (writer: Utf8JsonWriter) (value: bool) = writer.WriteBooleanValue value
+
+let serializeString (writer: Utf8JsonWriter) (value: string) (config: ExportConfig) =
+    if value.Length > MaxStringLength then
+        writer.WriteStartObject()
+        writer.WriteString("_truncated", "string_too_large")
+        writer.WriteNumber("_length", value.Length)
+        writer.WriteString("_prefix", StringOps.truncateSpan 1000 (value.AsSpan()))
+
+        writer.WriteString(
+            "_sha256",
+            try
+                computeSha256 (Encoding.UTF8.GetBytes value)
+            with _ ->
+                "hash_failed"
+        )
+
+        writer.WriteEndObject()
+    else
+        writer.WriteStringValue value
+
+[<MethodImpl(MethodImplOptions.AggressiveInlining)>]
+let serializeNumeric (writer: Utf8JsonWriter) (value: obj) =
+    match value with
+    | :? int64 as i -> writer.WriteNumberValue i
+    | :? int32 as i -> writer.WriteNumberValue i
+    | :? int16 as i -> writer.WriteNumberValue i
+    | :? uint64 as i -> writer.WriteNumberValue(decimal i)
+    | :? uint32 as i -> writer.WriteNumberValue i
+    | :? uint16 as i -> writer.WriteNumberValue i
+    | :? byte as b -> writer.WriteNumberValue b
+    | :? sbyte as b -> writer.WriteNumberValue b
+    | :? decimal as d -> writer.WriteNumberValue d
+    | :? double as d -> writer.WriteNumberValue d
+    | :? float32 as f -> writer.WriteNumberValue(float f)
+    | _ -> writer.WriteStringValue(value.ToString())
+
+let serializeSpecialFloat (writer: Utf8JsonWriter) (value: float) =
+    if Double.IsNaN value then
+        writer.WriteStringValue "NaN"
+    elif Double.IsPositiveInfinity value then
+        writer.WriteStringValue "Infinity"
+    else
+        writer.WriteStringValue "-Infinity"
+
+let serializeSpecialFloat32 (writer: Utf8JsonWriter) (value: float32) =
+    if Single.IsNaN value then
+        writer.WriteStringValue "NaN"
+    elif Single.IsPositiveInfinity value then
+        writer.WriteStringValue "Infinity"
+    else
+        writer.WriteStringValue "-Infinity"
+
+let serializeBinary (writer: Utf8JsonWriter) (bytes: byte[]) (config: ExportConfig) =
+    if bytes.Length > MaxBinaryLength then
+        writer.WriteStartObject()
+        writer.WriteString("_truncated", "binary_too_large")
+        writer.WriteNumber("_length", bytes.Length)
+
+        writer.WriteString(
+            "_sha256",
+            try
+                computeSha256 bytes
+            with _ ->
+                "hash_failed"
+        )
+
+        writer.WriteEndObject()
+    else
+        try
+            writer.WriteStringValue(Convert.ToBase64String bytes)
+        with _ ->
+            writer.WriteStartObject()
+            writer.WriteString("_type", "byte_array")
+            writer.WriteNumber("_length", bytes.Length)
+            writer.WriteString("_error", "base64_failed")
+            writer.WriteEndObject()
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Serialization/Collections.fs
+=================================================================================
+
+
+module Neo4jExport.SerializationCollections
+
+open System
+open System.Text.Json
+open Neo4jExport
+open Neo4jExport.ExportTypes
+open Neo4jExport.ExportUtils
+open ErrorTracking
+
+/// Forward declaration needed due to circular dependency
+let mutable serializeValueFunc
+    : (Utf8JsonWriter -> obj -> SerializationDepth -> ExportConfig -> ErrorTracker -> unit) option =
+    None
+
+let serializeList
+    (writer: Utf8JsonWriter)
+    (list: Collections.IList)
+    (depth: SerializationDepth)
+    (config: ExportConfig)
+    (errorTracker: ErrorTracker)
+    =
+    writer.WriteStartArray()
+
+    let items =
+        list
+        |> Seq.cast<obj>
+        |> Seq.truncate config.MaxCollectionItems
+        |> Seq.toList
+
+    items
+    |> List.iter (fun item ->
+        serializeValueFunc.Value writer item (SerializationDepth.increment depth) config errorTracker)
+
+    if list.Count > config.MaxCollectionItems then
+        writer.WriteStartObject()
+        writer.WriteString("_truncated", "list_too_large")
+        writer.WriteNumber("_total_items", list.Count)
+        writer.WriteNumber("_shown_items", config.MaxCollectionItems)
+        writer.WriteEndObject()
+
+    writer.WriteEndArray()
+
+let serializeMap
+    (writer: Utf8JsonWriter)
+    (dict: Collections.IDictionary)
+    (depth: SerializationDepth)
+    (config: ExportConfig)
+    (errorTracker: ErrorTracker)
+    =
+    writer.WriteStartObject()
+    let keyTracker = createKeyTracker ()
+
+    let entries =
+        dict.Keys
+        |> Seq.cast<obj>
+        |> Seq.truncate config.MaxCollectionItems
+        |> Seq.toList
+
+    entries
+    |> List.iter (fun key ->
+        let keyStr =
+            try
+                if key = null then
+                    "null"
+                else
+                    ensureUniqueKey (key.ToString()) keyTracker
+            with _ ->
+                "_key_error"
+
+        writer.WritePropertyName keyStr
+        serializeValueFunc.Value writer dict.[key] (SerializationDepth.increment depth) config errorTracker)
+
+    if dict.Count > config.MaxCollectionItems then
+        writer.WriteString("_truncated", "map_too_large")
+        writer.WriteNumber("_total_entries", dict.Count)
+        writer.WriteNumber("_shown_entries", config.MaxCollectionItems)
+
+    writer.WriteEndObject()
+
+let serializeProperties
+    (writer: Utf8JsonWriter)
+    (properties: Collections.Generic.IReadOnlyDictionary<string, obj>)
+    (depth: SerializationDepth)
+    (config: ExportConfig)
+    (errorTracker: ErrorTracker)
+    =
+    properties
+    |> Seq.truncate config.MaxCollectionItems
+    |> Seq.fold
+        (fun keyTracker kvp ->
+            let safePropName =
+                ensureUniqueKey kvp.Key keyTracker
+
+            writer.WritePropertyName(safePropName)
+            serializeValueFunc.Value writer kvp.Value depth config errorTracker
+            keyTracker)
+        (createKeyTracker ())
+    |> ignore
+
+    if properties.Count > config.MaxCollectionItems then
+        writer.WritePropertyName("_truncated")
+        writer.WriteStringValue(sprintf "too_many_properties: %d total" properties.Count)
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Serialization/Temporal.fs
+=================================================================================
+
+
+module Neo4jExport.SerializationTemporal
+
+open System
+open System.Text.Json
+open Neo4j.Driver
+
+let serializeTemporal (writer: Utf8JsonWriter) (value: obj) =
+    let str =
+        match value with
+        | :? LocalDate as ld -> ld.ToString()
+        | :? LocalTime as lt -> lt.ToString()
+        | :? LocalDateTime as ldt -> ldt.ToString()
+        | :? ZonedDateTime as zdt -> zdt.ToString()
+        | :? Duration as dur -> dur.ToString()
+        | :? OffsetTime as ot -> ot.ToString()
+        | _ -> failwith "Not a temporal type"
+
+    writer.WriteStringValue str
+
+let serializeDateTime (writer: Utf8JsonWriter) (dt: DateTime) =
+    writer.WriteStringValue(dt.ToString "O")
+
+let serializeDateTimeOffset (writer: Utf8JsonWriter) (dto: DateTimeOffset) =
+    writer.WriteStringValue(dto.ToString "O")
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Serialization/Spatial.fs
+=================================================================================
+
+
+module Neo4jExport.SerializationSpatial
+
+open System
+open System.Text.Json
+open Neo4j.Driver
+
+let serializePoint (writer: Utf8JsonWriter) (pt: Point) =
+    writer.WriteStartObject()
+    writer.WriteString("type", "Point")
+    writer.WriteNumber("srid", pt.SrId)
+    writer.WriteNumber("x", pt.X)
+    writer.WriteNumber("y", pt.Y)
+
+    if not (Double.IsNaN pt.Z) then
+        writer.WriteNumber("z", pt.Z)
+
+    writer.WriteEndObject()
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Serialization/GraphElements.fs
+=================================================================================
+
+
+module Neo4jExport.SerializationGraphElements
+
+open System
+open System.Text.Json
+open Neo4j.Driver
+open Neo4jExport
+open Neo4jExport.ExportTypes
+open Neo4jExport.ExportUtils
+open Neo4jExport.SerializationContext
+open Neo4jExport.SerializationCollections
+open ErrorTracking
+
+/// Forward declaration for serializePath
+let mutable serializePathFunc: (Utf8JsonWriter -> IPath -> ExportConfig -> ErrorTracker -> unit) option =
+    None
+
+let serializeNode
+    (writer: Utf8JsonWriter)
+    (node: INode)
+    (depth: SerializationDepth)
+    (config: ExportConfig)
+    (errorTracker: ErrorTracker)
+    =
+    let level =
+        determineNestedLevel depth config
+
+    match level with
+    | Reference ->
+        writer.WriteStartObject()
+        writer.WriteString("_type", "node_reference")
+        writer.WriteString("element_id", node.ElementId)
+        writer.WritePropertyName("_labels")
+        writer.WriteStartArray()
+
+        node.Labels
+        |> Seq.truncate config.MaxLabelsInReferenceMode
+        |> Seq.iter writer.WriteStringValue
+
+        writer.WriteEndArray()
+        writer.WriteEndObject()
+
+    | Shallow ->
+        writer.WriteStartObject()
+        writer.WriteString("_type", "embedded_node_shallow")
+        writer.WriteString("element_id", node.ElementId)
+        writer.WritePropertyName("labels")
+        writer.WriteStartArray()
+        node.Labels |> Seq.iter writer.WriteStringValue
+        writer.WriteEndArray()
+        writer.WriteNumber("_property_count", node.Properties.Count)
+        writer.WriteEndObject()
+
+    | Deep ->
+        writer.WriteStartObject()
+        writer.WriteString("_type", "embedded_node")
+        writer.WriteString("element_id", node.ElementId)
+        writer.WritePropertyName("labels")
+        writer.WriteStartArray()
+        node.Labels |> Seq.iter writer.WriteStringValue
+        writer.WriteEndArray()
+
+        writer.WritePropertyName("properties")
+        writer.WriteStartObject()
+        serializeProperties writer node.Properties (SerializationDepth.increment depth) config errorTracker
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+
+let serializeRelationship
+    (writer: Utf8JsonWriter)
+    (rel: IRelationship)
+    (depth: SerializationDepth)
+    (config: ExportConfig)
+    (errorTracker: ErrorTracker)
+    =
+    let level =
+        determineNestedLevel depth config
+
+    match level with
+    | Reference ->
+        writer.WriteStartObject()
+        writer.WriteString("_type", "relationship_reference")
+        writer.WriteString("element_id", rel.ElementId)
+        writer.WriteString("_type_name", rel.Type)
+        writer.WriteEndObject()
+
+    | Shallow ->
+        writer.WriteStartObject()
+        writer.WriteString("_type", "embedded_relationship_shallow")
+        writer.WriteString("element_id", rel.ElementId)
+        writer.WriteString("type", rel.Type)
+        writer.WriteString("start_element_id", rel.StartNodeElementId)
+        writer.WriteString("end_element_id", rel.EndNodeElementId)
+        writer.WriteNumber("_property_count", rel.Properties.Count)
+        writer.WriteEndObject()
+
+    | Deep ->
+        writer.WriteStartObject()
+        writer.WriteString("_type", "embedded_relationship")
+        writer.WriteString("element_id", rel.ElementId)
+        writer.WriteString("type", rel.Type)
+        writer.WriteString("start_element_id", rel.StartNodeElementId)
+        writer.WriteString("end_element_id", rel.EndNodeElementId)
+
+        writer.WritePropertyName("properties")
+        writer.WriteStartObject()
+        serializeProperties writer rel.Properties (SerializationDepth.increment depth) config errorTracker
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+
+let writeNode (writer: Utf8JsonWriter) (node: INode) (elementId: string) (ctx: WriterContext) =
+    writer.WriteStartObject()
+    writer.WriteString("type", "node")
+    writer.WriteString("element_id", elementId)
+    writer.WriteString("export_id", ctx.ExportId.ToString())
+    writer.WriteStartArray("labels")
+
+    node.Labels
+    |> Seq.truncate ctx.Config.MaxLabelsPerNode
+    |> Seq.iter (fun label ->
+        match validateLabel label elementId with
+        | Ok safeLabel -> writer.WriteStringValue safeLabel
+        | Error msg ->
+            ctx.ErrorTracker.AddWarning(msg, ?elementId = Some elementId)
+            writer.WriteStringValue "_invalid_label")
+
+    writer.WriteEndArray()
+    writer.WriteStartObject "properties"
+
+    serializeProperties writer node.Properties SerializationDepth.zero ctx.Config ctx.ErrorTracker
+
+    writer.WriteEndObject()
+    writer.WriteEndObject()
+
+let writeRelationship (writer: Utf8JsonWriter) (rel: IRelationship) (ids: EntityIds) (ctx: WriterContext) =
+    writer.WriteStartObject()
+    writer.WriteString("type", "relationship")
+    writer.WriteString("element_id", ids.ElementId)
+    writer.WriteString("export_id", ctx.ExportId.ToString())
+
+    let safeType =
+        match validateRelType rel.Type ids.ElementId with
+        | Ok t -> t
+        | Error msg ->
+            ctx.ErrorTracker.AddWarning(msg, ?elementId = Some ids.ElementId)
+            "_invalid_type"
+
+    writer.WriteString("label", safeType)
+    writer.WriteString("start_element_id", ids.StartElementId)
+    writer.WriteString("end_element_id", ids.EndElementId)
+    writer.WriteStartObject("properties")
+
+    serializeProperties writer rel.Properties SerializationDepth.zero ctx.Config ctx.ErrorTracker
+
+    writer.WriteEndObject()
+    writer.WriteEndObject()
+
+let serializeGraphElement
+    (writer: Utf8JsonWriter)
+    (elem: GraphElement)
+    (depth: SerializationDepth)
+    (config: ExportConfig)
+    (errorTracker: ErrorTracker)
+    =
+    match elem with
+    | GraphElement.Node node -> serializeNode writer node depth config errorTracker
+    | GraphElement.Relationship rel -> serializeRelationship writer rel depth config errorTracker
+    | GraphElement.Path path -> serializePathFunc.Value writer path config errorTracker
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Serialization/Path.fs
+=================================================================================
+
+
+module Neo4jExport.SerializationPath
+
+open System
+open System.Text.Json
+open Neo4j.Driver
+open Neo4jExport
+open Neo4jExport.ExportTypes
+open Neo4jExport.SerializationContext
+open Neo4jExport.SerializationCollections
+open ErrorTracking
+
+let private generatePathSequenceTailRec nodeCount relCount =
+    let rec loop acc nodeIdx relIdx isNode =
+        match nodeIdx < nodeCount, relIdx < relCount, isNode with
+        | true, _, true ->
+            let item =
+                {| Type = "node"; Index = nodeIdx |}
+
+            loop (item :: acc) (nodeIdx + 1) relIdx false
+        | _, true, false ->
+            let item =
+                {| Type = "relationship"
+                   Index = relIdx |}
+
+            loop (item :: acc) nodeIdx (relIdx + 1) true
+        | false, false, _ -> List.rev acc
+        | _ -> loop acc nodeIdx relIdx (not isNode)
+
+    loop [] 0 0 true
+
+let private serializePathFull
+    (writer: Utf8JsonWriter)
+    (path: IPath)
+    (config: ExportConfig)
+    (errorTracker: ErrorTracker)
+    =
+    writer.WritePropertyName("nodes")
+    writer.WriteStartArray()
+
+    path.Nodes
+    |> Seq.iter (fun node ->
+        writer.WriteStartObject()
+        writer.WriteString("element_id", node.ElementId)
+        writer.WritePropertyName("labels")
+        writer.WriteStartArray()
+        node.Labels |> Seq.iter writer.WriteStringValue
+        writer.WriteEndArray()
+        writer.WritePropertyName("properties")
+        writer.WriteStartObject()
+        serializeProperties writer node.Properties SerializationDepth.zero config errorTracker
+        writer.WriteEndObject()
+        writer.WriteEndObject())
+
+    writer.WriteEndArray()
+
+    writer.WritePropertyName("relationships")
+    writer.WriteStartArray()
+
+    path.Relationships
+    |> Seq.iter (fun rel ->
+        writer.WriteStartObject()
+        writer.WriteString("element_id", rel.ElementId)
+        writer.WriteString("type", rel.Type)
+        writer.WriteString("start_element_id", rel.StartNodeElementId)
+        writer.WriteString("end_element_id", rel.EndNodeElementId)
+        writer.WritePropertyName("properties")
+        writer.WriteStartObject()
+        serializeProperties writer rel.Properties SerializationDepth.zero config errorTracker
+        writer.WriteEndObject()
+        writer.WriteEndObject())
+
+    writer.WriteEndArray()
+
+let private serializePathCompact (writer: Utf8JsonWriter) (path: IPath) (config: ExportConfig) =
+    writer.WritePropertyName("nodes")
+    writer.WriteStartArray()
+
+    path.Nodes
+    |> Seq.iter (fun node ->
+        writer.WriteStartObject()
+        writer.WriteString("element_id", node.ElementId)
+        writer.WritePropertyName("labels")
+        writer.WriteStartArray()
+
+        node.Labels
+        |> Seq.truncate config.MaxLabelsInPathCompact
+        |> Seq.iter writer.WriteStringValue
+
+        writer.WriteEndArray()
+        writer.WriteEndObject())
+
+    writer.WriteEndArray()
+
+    writer.WritePropertyName("relationships")
+    writer.WriteStartArray()
+
+    path.Relationships
+    |> Seq.iter (fun rel ->
+        writer.WriteStartObject()
+        writer.WriteString("element_id", rel.ElementId)
+        writer.WriteString("type", rel.Type)
+        writer.WriteEndObject())
+
+    writer.WriteEndArray()
+
+let private serializePathIdsOnly (writer: Utf8JsonWriter) (path: IPath) =
+    writer.WritePropertyName("node_element_ids")
+    writer.WriteStartArray()
+
+    path.Nodes
+    |> Seq.iter (fun n -> writer.WriteStringValue(n.ElementId))
+
+    writer.WriteEndArray()
+
+    writer.WritePropertyName("relationship_element_ids")
+    writer.WriteStartArray()
+
+    path.Relationships
+    |> Seq.iter (fun r -> writer.WriteStringValue(r.ElementId))
+
+    writer.WriteEndArray()
+
+let serializePath (writer: Utf8JsonWriter) (path: IPath) (config: ExportConfig) (errorTracker: ErrorTracker) =
+    if int64 path.Nodes.Count > config.MaxPathLength then
+        errorTracker.AddError(
+            sprintf "Path too long: %d nodes exceeds maximum %d" path.Nodes.Count config.MaxPathLength
+        )
+
+        writer.WriteStartObject()
+        writer.WriteString("_type", "path")
+        writer.WriteString("_error", "path_too_long")
+        writer.WriteEndObject()
+    else
+        let level =
+            determinePathLevel path.Nodes.Count config
+
+        match level with
+        | Compact ->
+            errorTracker.AddWarning(
+                sprintf "Path length %d exceeds full threshold, automatically using Compact mode" path.Nodes.Count
+            )
+        | IdsOnly ->
+            errorTracker.AddWarning(
+                sprintf "Path length %d exceeds compact threshold, automatically using IdsOnly mode" path.Nodes.Count
+            )
+        | Full -> ()
+
+        writer.WriteStartObject()
+        writer.WriteString("_type", "path")
+        writer.WriteNumber("length", path.Nodes.Count)
+        writer.WriteString("_serialization_level", level.ToString())
+
+        match level with
+        | Full -> serializePathFull writer path config errorTracker
+        | Compact -> serializePathCompact writer path config
+        | IdsOnly -> serializePathIdsOnly writer path
+
+        writer.WritePropertyName("sequence")
+        writer.WriteStartArray()
+
+        generatePathSequenceTailRec path.Nodes.Count path.Relationships.Count
+        |> List.iter (fun item ->
+            writer.WriteStartObject()
+            writer.WriteString("type", item.Type)
+            writer.WriteNumber("index", item.Index)
+            writer.WriteEndObject())
+
+        writer.WriteEndArray()
+        writer.WriteEndObject()
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Serialization/Engine.fs
+=================================================================================
+
+
+module Neo4jExport.SerializationEngine
+
+open System
+open System.Text.Json
+open Neo4j.Driver
+open Neo4jExport
+open Neo4jExport.ExportTypes
+
+open Neo4jExport.SerializationContext
+open Neo4jExport.SerializationPrimitives
+open Neo4jExport.SerializationTemporal
+open Neo4jExport.SerializationSpatial
+open Neo4jExport.SerializationCollections
+open Neo4jExport.SerializationGraphElements
+open Neo4jExport.SerializationPath
+open ErrorTracking
+
+let rec serializeValue
+    (writer: Utf8JsonWriter)
+    (value: obj)
+    (depth: SerializationDepth)
+    (config: ExportConfig)
+    (errorTracker: ErrorTracker)
+    =
+    if SerializationDepth.exceedsLimit config.MaxNestedDepth depth then
+        writeDepthExceeded writer value depth
+    else
+        try
+            match value with
+            | null -> serializeNull writer
+            | :? string as s -> serializeString writer s config
+            | :? bool as b -> serializeBoolean writer b
+            | TemporalType _ -> serializeTemporal writer value
+            | NumericType n -> serializeNumeric writer n
+            | :? double as d when Double.IsNaN d || Double.IsInfinity d -> serializeSpecialFloat writer d
+            | :? float32 as f when Single.IsNaN f || Single.IsInfinity f -> serializeSpecialFloat32 writer f
+            | GraphElement elem -> serializeGraphElement writer elem depth config errorTracker
+            | :? DateTime as dt -> serializeDateTime writer dt
+            | :? DateTimeOffset as dto -> serializeDateTimeOffset writer dto
+            | :? Point as p -> serializePoint writer p
+            | :? (byte[]) as bytes -> serializeBinary writer bytes config
+            | :? Collections.IList as list -> serializeList writer list depth config errorTracker
+            | :? Collections.IDictionary as dict -> serializeMap writer dict depth config errorTracker
+            | _ -> writeUnknownType writer value
+        with ex ->
+            handleSerializationError writer ex depth
+
+/// Initialize circular dependencies after serializeValue is defined
+do
+    SerializationCollections.serializeValueFunc <- Some serializeValue
+
+    SerializationGraphElements.serializePathFunc <- Some serializePath
+
+/// Re-export main functions for use in Export.fs
+let writeNode =
+    SerializationGraphElements.writeNode
+
+let writeRelationship =
+    SerializationGraphElements.writeRelationship
+
+let serializeProperties =
+    SerializationCollections.serializeProperties
+
+let createErrorContext =
+    SerializationContext.createErrorContext
+
+let trackSerializationError =
+    SerializationContext.trackSerializationError
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Types.fs
+=================================================================================
+
+
+module Neo4jExport.ExportTypes
+
+open System
+open System.Buffers
+open Neo4j.Driver
+open Neo4jExport
+open ErrorTracking
+
+[<Struct>]
+type EntityIds =
+    { ElementId: string
+      StartElementId: string
+      EndElementId: string }
+
+[<Struct>]
+type SerializationState =
+    { Depth: SerializationDepth
+      BytesWritten: int64
+      RecordCount: int64 }
+
+type WriterContext =
+    { Config: ExportConfig
+      ErrorTracker: ErrorTracker
+      ExportId: Guid }
+
+/// Generic batch processor configuration
+type BatchProcessor =
+    { Query: string
+      GetTotalQuery: string option
+      ProcessRecord:
+          ArrayBufferWriter<byte>
+              -> IRecord
+              -> Guid
+              -> ExportProgress
+              -> ErrorTracker
+              -> ExportConfig
+              -> (int64 * ExportProgress)
+      EntityName: string }
+
+/// Record handler that can maintain state
+type RecordHandler<'state> = 'state -> IRecord -> int64 -> 'state
+
+/// Combined state for node export that tracks both lines and labels
+type NodeExportState =
+    { LineState: LineTrackingState
+      LabelTracker: LabelStatsTracker.Tracker }
+
+/// State for relationship export that only tracks lines
+type RelationshipExportState = LineTrackingState
+
+let (|TemporalType|_|) (value: obj) =
+    match value with
+    | :? LocalDate as ld -> Some(ld.ToString())
+    | :? LocalTime as lt -> Some(lt.ToString())
+    | :? LocalDateTime as ldt -> Some(ldt.ToString())
+    | :? ZonedDateTime as zdt -> Some(zdt.ToString())
+    | :? Duration as dur -> Some(dur.ToString())
+    | :? OffsetTime as ot -> Some(ot.ToString())
+    | _ -> None
+
+let (|NumericType|_|) (value: obj) =
+    match value with
+    | :? int64 -> Some value
+    | :? int32 -> Some value
+    | :? int16 -> Some value
+    | :? uint64 -> Some value
+    | :? uint32 -> Some value
+    | :? uint16 -> Some value
+    | :? byte -> Some value
+    | :? sbyte -> Some value
+    | :? decimal -> Some value
+    | :? double as d when not (Double.IsNaN d || Double.IsInfinity d) -> Some value
+    | :? float32 as f when not (Single.IsNaN f || Single.IsInfinity f) -> Some value
+    | _ -> None
+
+let (|GraphElement|_|) (value: obj) =
+    match value with
+    | :? INode as n -> Some(GraphElement.Node n)
+    | :? IRelationship as r -> Some(GraphElement.Relationship r)
+    | :? IPath as p -> Some(GraphElement.Path p)
+    | _ -> None
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Utils.fs
+=================================================================================
+
+
+module Neo4jExport.ExportUtils
+
+open System
+open System.Text
+open System.Buffers
+open System.Runtime.CompilerServices
+open System.Collections.Generic
+open Neo4jExport.ExportTypes
+
+module StringOps =
+    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
+    let truncateSpan (maxLen: int) (span: ReadOnlySpan<char>) =
+        if span.Length <= maxLen then
+            span.ToString()
+        else
+            String.Concat(span.Slice(0, maxLen - 3).ToString(), "...")
+
+    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
+    let isNullOrWhiteSpace (s: string) = String.IsNullOrWhiteSpace(s)
+
+module BufferPool =
+    let private pool = ArrayPool<byte>.Shared
+
+    [<Struct>]
+    type PooledBuffer =
+        { Buffer: byte[]
+          Length: int }
+
+        interface IDisposable with
+            member this.Dispose() =
+                pool.Return(this.Buffer, clearArray = true)
+
+    let rent minLength =
+        let buffer = pool.Rent(minLength)
+
+        { Buffer = buffer
+          Length = buffer.Length }
+
+module VOpt =
+    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
+    let inline ofOption opt =
+        match opt with
+        | Some v -> ValueSome v
+        | None -> ValueNone
+
+    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
+    let inline defaultValue def vopt =
+        match vopt with
+        | ValueSome v -> v
+        | ValueNone -> def
+
+let computeSha256 (data: byte[]) =
+    use sha256 =
+        Security.Cryptography.SHA256.Create()
+
+    let hash = sha256.ComputeHash data
+    Convert.ToBase64String hash
+
+/// Track unique keys within a JSON object to prevent duplicates
+let createKeyTracker () = HashSet<string>(StringComparer.Ordinal)
+
+/// Ensures property keys are unique by adding suffix if needed
+let ensureUniqueKey (key: string) (tracker: HashSet<string>) =
+    let truncatedKey =
+        if key.Length > 1000 then
+            StringOps.truncateSpan 997 (key.AsSpan())
+        else
+            key
+
+    if tracker.Add truncatedKey then
+        truncatedKey
+    else
+        let rec findUniqueKey counter =
+            let candidateKey =
+                sprintf "%s_%d" truncatedKey counter
+
+            if tracker.Add candidateKey then
+                candidateKey
+            else
+                findUniqueKey (counter + 1)
+
+        findUniqueKey 1
+[<MethodImpl(MethodImplOptions.AggressiveInlining)>]
+let validateDepth currentDepth maxDepth =
+    if currentDepth >= maxDepth then
+        ValueSome(DepthExceeded(currentDepth, maxDepth))
+    else
+        ValueNone
+
+let validateLabel (label: string) (elementId: string) =
+    match label with
+    | null -> Error(sprintf "Null label found on node %s" elementId)
+    | l when l.Length > 1000 -> Error(sprintf "Label truncated on node %s" elementId)
+    | l -> Ok l
+
+let validateRelType (relType: string) (elementId: string) =
+    match relType with
+    | null -> Error(sprintf "Null relationship type on relationship %s" elementId)
+    | t when t.Length > 1000 -> Error(sprintf "Relationship type truncated on relationship %s" elementId)
+    | t -> Ok t
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/Core.fs
+=================================================================================
+
+
+module Neo4jExport.ExportCore
+
+open System
+open System.Collections.Generic
+open System.IO
+open System.Text
+open System.Text.Json
+open Neo4j.Driver
+open Neo4jExport
+open Neo4jExport.ExportTypes
+open Neo4jExport.ExportUtils
+open Neo4jExport.SerializationEngine
+open Neo4jExport.ExportBatchProcessing
+open ErrorTracking
+
+/// Unified node export with statistics
+let exportNodesUnified
+    (context: ApplicationContext)
+    (session: SafeSession)
+    (config: ExportConfig)
+    (fileStream: FileStream)
+    (stats: ExportProgress)
+    (exportId: Guid)
+    (errorTracker: ErrorTracker)
+    (lineState: LineTrackingState)
+    : Async<Result<(ExportProgress * LabelStatsTracker.Tracker * LineTrackingState), AppError>> =
+    async {
+        Log.info "Exporting nodes with label statistics..."
+
+        let initialState: NodeExportState =
+            { LineState = lineState |> LineTracking.recordTypeStart "node"
+              LabelTracker = LabelStatsTracker.create () }
+
+        let processor =
+            { Query = "MATCH (n) RETURN n, labels(n) as labels SKIP $skip LIMIT $limit"
+              GetTotalQuery = Some "MATCH (n) RETURN count(n) as count"
+              ProcessRecord = processNodeRecord
+              EntityName = "Nodes" }
+
+        let nodeHandler (state: NodeExportState) (record: IRecord) (bytesWritten: int64) : NodeExportState =
+            errorTracker.IncrementLine()
+            
+            let newLineState = state.LineState |> LineTracking.incrementLine
+
+            let labels =
+                try
+                    record.["labels"].As<List<obj>>()
+                    |> Seq.map (fun o -> o.ToString())
+                    |> Seq.toList
+                with _ ->
+                    []
+
+            let bytesPerLabel =
+                if List.isEmpty labels then
+                    bytesWritten
+                else
+                    bytesWritten / int64 labels.Length
+
+            let newLabelTracker =
+                labels
+                |> List.fold
+                    (fun tracker label ->
+                        tracker
+                        |> LabelStatsTracker.startLabel label
+                        |> LabelStatsTracker.updateLabel label 1L bytesPerLabel)
+                    state.LabelTracker
+
+            { LineState = newLineState
+              LabelTracker = newLabelTracker }
+
+        match!
+            processBatchedQuery
+                processor
+                context
+                session
+                config
+                fileStream
+                stats
+                exportId
+                errorTracker
+                initialState
+                nodeHandler
+        with
+        | Error e -> return Error e
+        | Ok(finalStats, finalState) -> return Ok(finalStats, finalState.LabelTracker, finalState.LineState)
+    }
+
+let exportRelationships
+    (context: ApplicationContext)
+    (session: SafeSession)
+    (config: ExportConfig)
+    (fileStream: FileStream)
+    stats
+    exportId
+    (errorTracker: ErrorTracker)
+    (lineState: LineTrackingState)
+    : Async<Result<(ExportProgress * LineTrackingState), AppError>> =
+    async {
+        Log.info "Exporting relationships..."
+
+        let initialState: RelationshipExportState =
+            lineState |> LineTracking.recordTypeStart "relationship"
+
+        let processor =
+            { Query = "MATCH (s)-[r]->(t) RETURN r, s, t SKIP $skip LIMIT $limit"
+              GetTotalQuery = Some "MATCH ()-[r]->() RETURN count(r) as count"
+              ProcessRecord = processRelationshipRecord
+              EntityName = "Relationships" }
+
+        let relationshipHandler (state: RelationshipExportState) (record: IRecord) (bytesWritten: int64) : RelationshipExportState =
+            errorTracker.IncrementLine()
+            state |> LineTracking.incrementLine
+
+        match!
+            processBatchedQuery
+                processor
+                context
+                session
+                config
+                fileStream
+                stats
+                exportId
+                errorTracker
+                initialState
+                relationshipHandler
+        with
+        | Error e -> return Error e
+        | Ok(finalStats, finalState) -> return Ok(finalStats, finalState)
+    }
+
+/// Export error and warning records from the error tracker
+let exportErrors
+    (fileStream: FileStream)
+    (errorTracker: ErrorTracker)
+    (exportId: Guid)
+    (lineState: LineTrackingState)
+    : Async<int64 * LineTrackingState> =
+    async {
+        let errors = errorTracker.GetErrors()
+        let mutable count = 0L
+        let mutable currentLineState = lineState
+
+        let newlineBytes =
+            Encoding.UTF8.GetBytes Environment.NewLine
+
+        for error in errors do
+            currentLineState <-
+                currentLineState
+                |> LineTracking.recordTypeStart error.Type
+                |> LineTracking.incrementLine
+
+            use memoryStream = new MemoryStream()
+
+            use writer =
+                new Utf8JsonWriter(memoryStream, JsonConfig.createWriterOptions ())
+
+            writer.WriteStartObject()
+            writer.WriteString("type", error.Type)
+            writer.WriteString("export_id", exportId.ToString())
+            writer.WriteString("timestamp", error.Timestamp.ToString("O"))
+
+            match error.Line with
+            | Some line -> writer.WriteNumber("line", line)
+            | None -> ()
+
+            writer.WriteString("message", error.Message)
+
+            match error.ElementId with
+            | Some id -> writer.WriteString("element_id", id)
+            | None -> ()
+
+            match error.Details with
+            | Some details ->
+                writer.WritePropertyName("details")
+                writer.WriteStartObject()
+
+                for kvp in details do
+                    writer.WritePropertyName(kvp.Key)
+                    JsonHelpers.writeJsonValue writer kvp.Value
+
+                writer.WriteEndObject()
+            | None -> ()
+
+            writer.WriteEndObject()
+            writer.Flush()
+
+            let bytes = memoryStream.ToArray()
+            fileStream.Write(bytes, 0, bytes.Length)
+            fileStream.Write(newlineBytes, 0, newlineBytes.Length)
+            count <- count + 1L
+
+        return (count, currentLineState)
+    }
+
+/// Common export completion logging
+let private logExportCompletion (_stats: CompletedExportStats) = ()
+
+/// Validates and moves temporary export file to final destination with metadata-based naming
+let finalizeExport _ (config: ExportConfig) (metadata: FullMetadata) (tempFile: string) (stats: CompletedExportStats) =
+    async {
+        try
+            Log.info "Finalizing export..."
+            let tempInfo = FileInfo tempFile
+
+            if not tempInfo.Exists then
+                return Error(FileSystemError(tempFile, "Temporary file not found", None))
+            elif tempInfo.Length = 0L then
+                return Error(ExportError("Export produced empty file", None))
+            else
+                let finalPath =
+                    Configuration.generateMetadataFilename config.OutputDirectory metadata
+
+                Log.info (sprintf "Moving %s -> %s" (Path.GetFileName tempFile) (Path.GetFileName finalPath))
+                File.Move(tempFile, finalPath, true)
+
+                Log.info (sprintf "Export successful: %s" finalPath)
+                Log.info (sprintf "File size: %s" (Utils.formatBytes (FileInfo(finalPath).Length)))
+
+                Log.info (sprintf "Records: %d exported, %d skipped" stats.RecordsProcessed stats.RecordsSkipped)
+
+                return Ok()
+        with ex ->
+            return Error(FileSystemError(tempFile, "Failed to finalize export", Some ex))
+    }
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export/BatchProcessing.fs
+=================================================================================
+
+
+module Neo4jExport.ExportBatchProcessing
+
+open System
+open System.IO
+open System.Text
+open System.Text.Json
+open System.Buffers
+open Neo4j.Driver
+open Neo4jExport
+open Neo4jExport.ExportTypes
+open Neo4jExport.ExportUtils
+open Neo4jExport.SerializationEngine
+open ErrorTracking
+
+/// Common progress reporting logic
+let reportProgress
+    (stats: ExportProgress)
+    (startTime: DateTime)
+    (progressInterval: TimeSpan)
+    (lastProgress: DateTime)
+    (totalOpt: int64 option)
+    (entityType: string)
+    =
+    let now = DateTime.UtcNow
+
+    if now - lastProgress > progressInterval then
+        let rate =
+            float stats.RecordsProcessed
+            / (now - startTime).TotalSeconds
+
+        let message =
+            match totalOpt with
+            | Some total ->
+                sprintf
+                    "%s: %d/%d exported (%.0f records/sec, %s written)"
+                    entityType
+                    stats.RecordsProcessed
+                    total
+                    rate
+                    (Utils.formatBytes stats.BytesWritten)
+            | None ->
+                sprintf
+                    "%s: %d exported (%.0f records/sec, %s written)"
+                    entityType
+                    stats.RecordsProcessed
+                    rate
+                    (Utils.formatBytes stats.BytesWritten)
+
+        Log.info message
+        now
+    else
+        lastProgress
+
+let private tryGetNode (record: IRecord) =
+    try
+        Ok(record.["n"].As<INode>())
+    with ex ->
+        Error ex
+
+let private tryGetRelationship (record: IRecord) =
+    try
+        Ok(record.["r"].As<IRelationship>())
+    with ex ->
+        Error ex
+
+let private tryExtractElementId (node: INode) =
+    try
+        struct (node.ElementId, true)
+    with _ ->
+        struct ("", false)
+
+let private tryExtractRelIds (rel: IRelationship) (startNode: INode) (endNode: INode) =
+    try
+        struct (rel.ElementId, startNode.ElementId, endNode.ElementId, true)
+    with _ ->
+        struct ("", "", "", false)
+
+let private incrementStats (stats: ExportProgress) =
+    { stats with
+        RecordsProcessed = stats.RecordsProcessed + 1L }
+
+/// Common node processing logic
+let processNodeRecord (buffer: ArrayBufferWriter<byte>) record exportId stats errorTracker config =
+    let ctx =
+        SerializationContext.createWriterContext config errorTracker exportId
+
+    use writer =
+        new Utf8JsonWriter(buffer, JsonConfig.createWriterOptions ())
+
+    match tryGetNode record with
+    | Ok node ->
+        let elementId = node.ElementId
+        writeNode writer node elementId ctx
+    | Error ex ->
+        let elementId = ""
+
+        trackSerializationError
+            ctx.ErrorTracker
+            (sprintf "Node serialization failed: %s" ex.Message)
+            elementId
+            "node"
+            (ex.GetType().Name)
+
+        writer.WriteStartObject()
+        writer.WriteString("type", "node")
+        writer.WriteString("element_id", elementId)
+        writer.WriteString("export_id", ctx.ExportId.ToString())
+        writer.WriteStartArray "labels"
+        writer.WriteEndArray()
+        writer.WriteStartObject "properties"
+        writer.WriteString("_export_error", "serialization_failed")
+        writer.WriteString("_original_element_id", elementId)
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+
+    writer.Flush()
+    let dataBytes = int64 buffer.WrittenCount
+
+    dataBytes, incrementStats stats
+
+/// Common relationship processing logic
+let processRelationshipRecord (buffer: ArrayBufferWriter<byte>) record exportId stats errorTracker config =
+    let ctx =
+        SerializationContext.createWriterContext config errorTracker exportId
+
+    use writer =
+        new Utf8JsonWriter(buffer, JsonConfig.createWriterOptions ())
+
+    match tryGetRelationship record, record.TryGetValue("s"), record.TryGetValue("t") with
+    | Ok rel, (true, startVal), (true, endVal) ->
+        try
+            let startNode = startVal.As<INode>()
+            let endNode = endVal.As<INode>()
+
+            // Safely extract all IDs early using existing function
+            let struct (relId, startId, endId, success) = tryExtractRelIds rel startNode endNode
+
+            if success then
+                let ids =
+                    { ElementId = relId
+                      StartElementId = startId
+                      EndElementId = endId }
+
+                writeRelationship writer rel ids ctx
+            else
+                // IDs extraction failed - report with whatever we captured
+                trackSerializationError
+                    ctx.ErrorTracker
+                    "Failed to extract relationship or node IDs"
+                    relId
+                    "relationship"
+                    "IdExtractionError"
+
+                writer.WriteStartObject()
+                writer.WriteString("type", "relationship")
+                writer.WriteString("element_id", relId)
+                writer.WriteString("export_id", ctx.ExportId.ToString())
+                writer.WriteString("label", "_UNKNOWN")
+                writer.WriteString("start_element_id", startId)
+                writer.WriteString("end_element_id", endId)
+                writer.WriteStartObject "properties"
+                writer.WriteString("_export_error", "id_extraction_failed")
+                writer.WriteEndObject()
+                writer.WriteEndObject()
+        with ex ->
+            // Now we can try to extract IDs for better error reporting
+            let struct (relId, startId, endId, _) = 
+                try
+                    let startNode = startVal.As<INode>()
+                    let endNode = endVal.As<INode>()
+                    tryExtractRelIds rel startNode endNode
+                with _ ->
+                    struct ("", "", "", false)
+
+            trackSerializationError
+                ctx.ErrorTracker
+                (sprintf "Relationship serialization failed: %s" ex.Message)
+                relId
+                "relationship"
+                (ex.GetType().Name)
+
+            writer.WriteStartObject()
+            writer.WriteString("type", "relationship")
+            writer.WriteString("element_id", relId)
+            writer.WriteString("export_id", ctx.ExportId.ToString())
+            writer.WriteString("label", "_UNKNOWN")
+            writer.WriteString("start_element_id", startId)
+            writer.WriteString("end_element_id", endId)
+            writer.WriteStartObject "properties"
+            writer.WriteString("_export_error", "serialization_failed")
+            writer.WriteEndObject()
+            writer.WriteEndObject()
+    | _ ->
+        trackSerializationError
+            ctx.ErrorTracker
+            "Failed to extract relationship or nodes from record"
+            ""
+            "relationship"
+            "RecordAccessError"
+
+        writer.WriteStartObject()
+        writer.WriteString("type", "relationship")
+        writer.WriteString("element_id", "")
+        writer.WriteString("export_id", ctx.ExportId.ToString())
+        writer.WriteString("label", "_UNKNOWN")
+        writer.WriteString("start_element_id", "")
+        writer.WriteString("end_element_id", "")
+        writer.WriteStartObject "properties"
+        writer.WriteString("_export_error", "relationship_access_failed")
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+
+    writer.Flush()
+    let dataBytes = int64 buffer.WrittenCount
+
+    dataBytes, incrementStats stats
+
+/// Generic batch processing function following functional composition
+let processBatchedQuery<'state>
+    (processor: BatchProcessor)
+    (context: ApplicationContext)
+    (session: SafeSession)
+    (config: ExportConfig)
+    (fileStream: FileStream)
+    (initialStats: ExportProgress)
+    (exportId: Guid)
+    (errorTracker: ErrorTracker)
+    (handlerState: 'state)
+    (handler: RecordHandler<'state>)
+    : Async<Result<ExportProgress * 'state, AppError>> =
+    async {
+        let bufferSize =
+            config.JsonBufferSizeKb * 1024
+
+        let buffer =
+            new ArrayBufferWriter<byte>(bufferSize)
+
+        let newlineBytes =
+            Encoding.UTF8.GetBytes Environment.NewLine
+
+        let progressInterval =
+            TimeSpan.FromSeconds 30.0
+
+        let batchSize = config.BatchSize
+
+        let! totalOpt =
+            match processor.GetTotalQuery with
+            | Some query ->
+                async {
+                    let! countResult = session.RunAsync(query)
+                    let! hasCount = countResult.FetchAsync() |> Async.AwaitTask
+
+                    let total =
+                        if hasCount then
+                            countResult.Current.["count"].As<int64>()
+                        else
+                            0L
+
+                    Log.info (sprintf "Total %s to export: %d" (processor.EntityName.ToLower()) total)
+                    return Some total
+                }
+            | None -> async { return None }
+
+        let rec processBatch
+            (currentStats: ExportProgress)
+            (lastProgress: DateTime)
+            (skip: int)
+            (currentHandlerState: 'state)
+            =
+            async {
+                let mutable currentHandlerState =
+                    currentHandlerState
+
+                if AppContext.isCancellationRequested context then
+                    return Ok(currentStats, currentHandlerState)
+                elif totalOpt.IsSome && int64 skip >= totalOpt.Value then
+                    return Ok(currentStats, currentHandlerState)
+                else
+                    let parameters =
+                        dict
+                            [ "skip", box skip
+                              "limit", box batchSize ]
+
+                    let! cursor = session.RunAsync(processor.Query, parameters)
+
+                    let mutable batchStats = currentStats
+                    let mutable recordCount = 0
+                    let mutable hasMore = true
+
+                    while hasMore do
+                        let! fetchResult = cursor.FetchAsync() |> Async.AwaitTask
+
+                        if fetchResult then
+                            recordCount <- recordCount + 1
+                            let record = cursor.Current
+
+                            buffer.Clear()
+
+                            let dataBytes, newStats =
+                                processor.ProcessRecord buffer record exportId batchStats errorTracker config
+
+                            fileStream.Write buffer.WrittenSpan
+                            fileStream.Write(newlineBytes, 0, newlineBytes.Length)
+
+                            batchStats <-
+                                { newStats with
+                                    BytesWritten =
+                                        newStats.BytesWritten
+                                        + dataBytes
+                                        + int64 newlineBytes.Length }
+
+                            let newHandlerState =
+                                handler currentHandlerState record dataBytes
+
+                            currentHandlerState <- newHandlerState
+                        else
+                            hasMore <- false
+
+                    fileStream.Flush()
+
+                    if recordCount = 0 then
+                        return Ok(batchStats, currentHandlerState)
+                    else
+                        let newLastProgress =
+                            reportProgress
+                                batchStats
+                                initialStats.StartTime
+                                progressInterval
+                                lastProgress
+                                totalOpt
+                                processor.EntityName
+
+                        return! processBatch batchStats newLastProgress (skip + batchSize) currentHandlerState
+            }
+
+        let! result = processBatch initialStats DateTime.UtcNow 0 handlerState
+
+        match result with
+        | Ok(stats, state) -> return Ok(stats, state)
+        | Error e -> return Error e
+    }
+
+
+=================================================================================
+FILE: Neo4jExport/src/Configuration.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open Constants
+
+module Configuration =
+    module private SafeParsing =
+        let tryParseInt64 (name: string) (value: string) : Result<int64, string> =
+            match Int64.TryParse(value) with
+            | true, parsed -> Ok parsed
+            | false, _ -> Error(sprintf "%s must be a valid integer (got: '%s')" name value)
+
+        let tryParseInt (name: string) (value: string) : Result<int, string> =
+            match Int32.TryParse(value) with
+            | true, parsed -> Ok parsed
+            | false, _ -> Error(sprintf "%s must be a valid integer (got: '%s')" name value)
+
+        let tryParseBool (name: string) (value: string) : Result<bool, string> =
+            match value.ToLowerInvariant() with
+            | "true"
+            | "yes"
+            | "1" -> Ok true
+            | "false"
+            | "no"
+            | "0" -> Ok false
+            | _ -> Error(sprintf "%s must be a valid boolean (true/false, yes/no, 1/0) (got: '%s')" name value)
+    let private appErrorToString =
+        function
+        | ConfigError msg -> msg
+        | SecurityError msg -> msg
+        | FileSystemError(path, msg, _) -> sprintf "%s: %s" path msg
+        | ConnectionError(msg, _) -> msg
+        | AuthenticationError msg -> msg
+        | QueryError(_, msg, _) -> msg
+        | DataCorruptionError(line, msg, _) -> sprintf "Line %d: %s" line msg
+        | DiskSpaceError(required, available) ->
+            sprintf
+                "Insufficient disk space: required %d GB, available %d GB"
+                (required / 1073741824L)
+                (available / 1073741824L)
+        | MemoryError msg -> msg
+        | ExportError(msg, _) -> msg
+        | TimeoutError(operation, duration) -> sprintf "Operation '%s' timed out after %A" operation duration
+
+    let private validateUri uriStr =
+        try
+            let uri = Uri(uriStr)
+
+            if
+                uri.Scheme <> "bolt"
+                && uri.Scheme <> "neo4j"
+                && uri.Scheme <> "bolt+s"
+                && uri.Scheme <> "neo4j+s"
+            then
+                Result.Error "URI scheme must be one of: bolt, neo4j, bolt+s, neo4j+s"
+            else
+                Result.Ok uri
+        with ex ->
+            Result.Error(sprintf "Invalid URI: %s" ex.Message)
+
+    let private validateOutputDirectory path =
+        match Security.validatePathSyntax path with
+        | Result.Error e -> Result.Error e
+        | Result.Ok validPath ->
+            match Utils.ensureDirectoryExists validPath with
+            | Result.Error e -> Result.Error e
+            | Result.Ok() -> Result.Ok validPath
+
+    /// Generates descriptive filename: [dbname]_[timestamp]_[nodes]n_[rels]r_[id].jsonl
+    let generateMetadataFilename (outputDir: string) (metadata: FullMetadata) =
+        let dbName =
+            metadata.SourceSystem.Database.Name
+            |> String.filter (fun c -> Char.IsLetterOrDigit c || c = '_')
+            |> fun s -> if s.Length > 20 then s.Substring(0, 20) else s
+            |> fun s -> if String.IsNullOrWhiteSpace(s) then "export" else s
+
+        let nodeCount =
+            match metadata.DatabaseStatistics.TryGetValue("nodeCount") with
+            | true, value ->
+                match JsonHelpers.tryGetInt64 value with
+                | Ok v -> v
+                | Error _ -> 0L
+            | _ -> 0L
+
+        let relCount =
+            match metadata.DatabaseStatistics.TryGetValue("relCount") with
+            | true, value ->
+                match JsonHelpers.tryGetInt64 value with
+                | Ok v -> v
+                | Error _ -> 0L
+            | _ -> 0L
+
+        let exportIdShort =
+            metadata.ExportMetadata.ExportId.ToString("N").Substring(0, 8)
+
+        let timestamp =
+            metadata.ExportMetadata.ExportTimestampUtc.ToString("yyyyMMddTHHmmssZ")
+
+        let filename =
+            sprintf "%s_%s_%dn_%dr_%s.jsonl" dbName timestamp nodeCount relCount exportIdShort
+
+        System.IO.Path.Combine(outputDir, filename)
+
+    let getConfig () : Result<ExportConfig, AppError> =
+        try
+            let uriStr =
+                Utils.getEnvVar Env.Uri Defaults.Uri
+
+            let uriResult = validateUri uriStr
+
+            let outputPath =
+                let outputFile =
+                    Utils.getEnvVar Env.OutputFile ""
+
+                if outputFile <> "" then
+                    System.IO.Path.GetDirectoryName(outputFile)
+                else
+                    Utils.getEnvVar Env.OutputDirectory Defaults.OutputDirectory
+
+            let outputResult =
+                validateOutputDirectory outputPath
+
+            let minDiskGb =
+                SafeParsing.tryParseInt64 Env.MinDiskGb (Utils.getEnvVar Env.MinDiskGb (string Defaults.MinDiskGb))
+
+            let maxMemoryMb =
+                SafeParsing.tryParseInt64
+                    Env.MaxMemoryMb
+                    (Utils.getEnvVar Env.MaxMemoryMb (string Defaults.MaxMemoryMb))
+
+            let skipSchema =
+                SafeParsing.tryParseBool
+                    Env.SkipSchemaCollection
+                    (Utils.getEnvVar Env.SkipSchemaCollection (string Defaults.SkipSchemaCollection))
+
+            let maxRetries =
+                SafeParsing.tryParseInt Env.MaxRetries (Utils.getEnvVar Env.MaxRetries (string Defaults.MaxRetries))
+
+            let retryDelayMs =
+                SafeParsing.tryParseInt
+                    Env.RetryDelayMs
+                    (Utils.getEnvVar Env.RetryDelayMs (string Defaults.RetryDelayMs))
+
+            let maxRetryDelayMs =
+                SafeParsing.tryParseInt
+                    Env.MaxRetryDelayMs
+                    (Utils.getEnvVar Env.MaxRetryDelayMs (string Defaults.MaxRetryDelayMs))
+
+            let queryTimeout =
+                SafeParsing.tryParseInt
+                    Env.QueryTimeoutSeconds
+                    (Utils.getEnvVar Env.QueryTimeoutSeconds (string Defaults.QueryTimeoutSeconds))
+
+            let enableDebug =
+                SafeParsing.tryParseBool
+                    Env.EnableDebugLogging
+                    (Utils.getEnvVar Env.EnableDebugLogging (string Defaults.EnableDebugLogging))
+
+            let validateJson =
+                SafeParsing.tryParseBool
+                    Env.ValidateJsonOutput
+                    (Utils.getEnvVar Env.ValidateJsonOutput (string Defaults.ValidateJsonOutput))
+
+            let allowInsecure =
+                SafeParsing.tryParseBool
+                    Env.AllowInsecure
+                    (Utils.getEnvVar Env.AllowInsecure (string Defaults.AllowInsecure))
+
+            let batchSize =
+                SafeParsing.tryParseInt Env.BatchSize (Utils.getEnvVar Env.BatchSize (string Defaults.BatchSize))
+
+            let jsonBufferSizeKb =
+                let value =
+                    SafeParsing.tryParseInt
+                        Env.JsonBufferSizeKb
+                        (Utils.getEnvVar Env.JsonBufferSizeKb (string Defaults.JsonBufferSizeKb))
+
+                match value with
+                | Ok size when size < 1 || size > 1024 ->
+                    Error(sprintf "JSON_BUFFER_SIZE_KB must be between 1 and 1024 KB (got: %d)" size)
+                | result -> result
+
+            let maxPathLength =
+                SafeParsing.tryParseInt64
+                    Env.MAX_PATH_LENGTH
+                    (Utils.getEnvVar Env.MAX_PATH_LENGTH (string Defaults.MaxPathLength))
+
+            let pathFullModeLimit =
+                SafeParsing.tryParseInt64
+                    Env.PATH_FULL_MODE_LIMIT
+                    (Utils.getEnvVar Env.PATH_FULL_MODE_LIMIT (string Defaults.PathFullModeLimit))
+
+            let pathCompactModeLimit =
+                SafeParsing.tryParseInt64
+                    Env.PATH_COMPACT_MODE_LIMIT
+                    (Utils.getEnvVar Env.PATH_COMPACT_MODE_LIMIT (string Defaults.PathCompactModeLimit))
+
+            let pathPropertyDepth =
+                SafeParsing.tryParseInt
+                    Env.PATH_PROPERTY_DEPTH
+                    (Utils.getEnvVar Env.PATH_PROPERTY_DEPTH (string Defaults.PathPropertyDepth))
+
+            let maxNestedDepth =
+                SafeParsing.tryParseInt
+                    Env.MAX_NESTED_DEPTH
+                    (Utils.getEnvVar Env.MAX_NESTED_DEPTH (string Defaults.MaxNestedDepth))
+
+            let nestedShallowModeDepth =
+                SafeParsing.tryParseInt
+                    Env.NESTED_SHALLOW_MODE_DEPTH
+                    (Utils.getEnvVar Env.NESTED_SHALLOW_MODE_DEPTH (string Defaults.NestedShallowModeDepth))
+
+            let nestedReferenceModeDepth =
+                SafeParsing.tryParseInt
+                    Env.NESTED_REFERENCE_MODE_DEPTH
+                    (Utils.getEnvVar Env.NESTED_REFERENCE_MODE_DEPTH (string Defaults.NestedReferenceModeDepth))
+
+            let maxCollectionItems =
+                SafeParsing.tryParseInt
+                    Env.MAX_COLLECTION_ITEMS
+                    (Utils.getEnvVar Env.MAX_COLLECTION_ITEMS (string Defaults.MaxCollectionItems))
+
+            let maxLabelsPerNode =
+                SafeParsing.tryParseInt
+                    Env.MAX_LABELS_PER_NODE
+                    (Utils.getEnvVar Env.MAX_LABELS_PER_NODE (string Defaults.MaxLabelsPerNode))
+
+            let maxLabelsInReferenceMode =
+                SafeParsing.tryParseInt
+                    Env.MAX_LABELS_IN_REFERENCE_MODE
+                    (Utils.getEnvVar Env.MAX_LABELS_IN_REFERENCE_MODE (string Defaults.MaxLabelsInReferenceMode))
+
+            let maxLabelsInPathCompact =
+                SafeParsing.tryParseInt
+                    Env.MAX_LABELS_IN_PATH_COMPACT
+                    (Utils.getEnvVar Env.MAX_LABELS_IN_PATH_COMPACT (string Defaults.MaxLabelsInPathCompact))
+
+            // Pattern match on all validation results to extract values safely
+            match uriResult, outputResult, minDiskGb, maxMemoryMb, skipSchema, maxRetries, 
+                  retryDelayMs, maxRetryDelayMs, queryTimeout, enableDebug, validateJson, 
+                  allowInsecure, batchSize, jsonBufferSizeKb, maxPathLength, pathFullModeLimit,
+                  pathCompactModeLimit, pathPropertyDepth, maxNestedDepth, nestedShallowModeDepth,
+                  nestedReferenceModeDepth, maxCollectionItems, maxLabelsPerNode, 
+                  maxLabelsInReferenceMode, maxLabelsInPathCompact with
+            | Ok uri, Ok output, Ok diskGb, Ok memMb, Ok skipSch, Ok maxRet,
+              Ok retDelay, Ok maxRetDelay, Ok queryTo, Ok debug, Ok valJson,
+              Ok insecure, Ok batch, Ok jsonBuf, Ok pathLen, Ok pathFull,
+              Ok pathCompact, Ok pathDepth, Ok nestDepth, Ok nestShallow,
+              Ok nestRef, Ok collItems, Ok labelsNode, Ok labelsRef, Ok labelsCompact ->
+                Result.Ok
+                    { Uri = uri
+                      User = Utils.getEnvVar Env.User Defaults.User
+                      Password = Utils.getEnvVar Env.Password Defaults.Password
+                      OutputDirectory = output
+                      MinDiskGb = diskGb
+                      MaxMemoryMb = memMb
+                      SkipSchemaCollection = skipSch
+                      MaxRetries = maxRet
+                      RetryDelayMs = retDelay
+                      MaxRetryDelayMs = maxRetDelay
+                      QueryTimeoutSeconds = queryTo
+                      EnableDebugLogging = debug
+                      ValidateJsonOutput = valJson
+                      AllowInsecure = insecure
+                      BatchSize = batch
+                      JsonBufferSizeKb = jsonBuf
+                      MaxPathLength = pathLen
+                      PathFullModeLimit = pathFull
+                      PathCompactModeLimit = pathCompact
+                      PathPropertyDepth = pathDepth
+                      MaxNestedDepth = nestDepth
+                      NestedShallowModeDepth = nestShallow
+                      NestedReferenceModeDepth = nestRef
+                      MaxCollectionItems = collItems
+                      MaxLabelsPerNode = labelsNode
+                      MaxLabelsInReferenceMode = labelsRef
+                      MaxLabelsInPathCompact = labelsCompact }
+            | _ ->
+                // Collect all errors from the Results
+                let errors = 
+                    [ match uriResult with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match outputResult with 
+                      | Error e -> Some (appErrorToString e) 
+                      | _ -> None
+                      match minDiskGb with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match maxMemoryMb with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match skipSchema with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match maxRetries with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match retryDelayMs with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match maxRetryDelayMs with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match queryTimeout with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match enableDebug with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match validateJson with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match allowInsecure with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match batchSize with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match jsonBufferSizeKb with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match maxPathLength with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match pathFullModeLimit with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match pathCompactModeLimit with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match pathPropertyDepth with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match maxNestedDepth with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match nestedShallowModeDepth with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match nestedReferenceModeDepth with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match maxCollectionItems with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match maxLabelsPerNode with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match maxLabelsInReferenceMode with 
+                      | Error e -> Some e 
+                      | _ -> None
+                      match maxLabelsInPathCompact with 
+                      | Error e -> Some e 
+                      | _ -> None ]
+                    |> List.choose id
+                Result.Error(ConfigError(String.concat "; " errors))
+        with ex ->
+            Result.Error(ConfigError(sprintf "Invalid configuration: %s" ex.Message))
+
+
+=================================================================================
+FILE: Neo4jExport/src/AppContext.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System.Threading
+open System.Diagnostics
+open System.Collections.Concurrent
+
+/// Application context management for lifecycle and resource tracking
+module AppContext =
+    /// Creates a new application context with initialized resources
+    let create () =
+        { CancellationTokenSource = new CancellationTokenSource()
+          TempFiles = new ConcurrentBag<string>()
+          ActiveProcesses = new ConcurrentBag<Process>() }
+
+    /// Gets the cancellation token from the context
+    let getCancellationToken (context: ApplicationContext) = context.CancellationTokenSource.Token
+
+    /// Checks if cancellation has been requested
+    let isCancellationRequested (context: ApplicationContext) =
+        context.CancellationTokenSource.Token.IsCancellationRequested
+
+    /// Requests cancellation of all operations
+    let cancel (context: ApplicationContext) =
+        context.CancellationTokenSource.Cancel()
+
+    /// Registers a temporary file for cleanup
+    let addTempFile (context: ApplicationContext) (path: string) = context.TempFiles.Add(path)
+
+
+=================================================================================
+FILE: Neo4jExport/src/Neo4j.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.Collections.Generic
+open System.IO
+open System.Threading
+open Neo4j.Driver
+/// Prevents concurrent session usage. Neo4j sessions are not thread-safe.
+type SafeSession(session: IAsyncSession) =
+    let inUse = ref 0
+
+    member _.RunAsync(query: string, ?parameters: IDictionary<string, obj>) : Async<IResultCursor> =
+        async {
+            if Interlocked.CompareExchange(inUse, 1, 0) <> 0 then
+                return
+                    raise (
+                        InvalidOperationException(
+                            "Session is already in use. Neo4j sessions are not thread-safe. "
+                            + "Create separate sessions for concurrent operations."
+                        )
+                    )
+
+            try
+                let! result =
+                    match parameters with
+                    | Some p -> session.RunAsync(query, p) |> Async.AwaitTask
+                    | None -> session.RunAsync(query) |> Async.AwaitTask
+
+                return result
+            finally
+                Interlocked.Exchange(inUse, 0) |> ignore
+        }
+
+    interface IDisposable with
+        member _.Dispose() = session.Dispose()
+
+/// Neo4j database operations with circuit breaker and retry logic
+module Neo4j =
+    module private Validation =
+        let notEmpty fieldName value =
+            if String.IsNullOrWhiteSpace(value) |> not then
+                Ok value
+            else
+                Error(QueryError(value, sprintf "%s cannot be empty" fieldName, None))
+
+        let positive fieldName value =
+            if value > 0 then
+                Ok value
+            else
+                Error(ConfigError(sprintf "%s must be positive" fieldName))
+
+        let validateQuery = notEmpty "Query"
+
+        let validateMaxResults =
+            positive "maxResults"
+
+    type private CircuitState =
+        | Closed
+        | Open of DateTime
+        | HalfOpen
+
+    /// Circuit breaker for handling transient failures
+    type CircuitBreaker =
+        private
+            { mutable State: CircuitState
+              mutable ConsecutiveFailures: int
+              mutable SuccessesInHalfOpen: int
+              Threshold: int
+              Duration: TimeSpan
+              RequiredSuccesses: int
+              Lock: obj }
+
+    let createCircuitBreaker threshold duration =
+        { State = Closed
+          ConsecutiveFailures = 0
+          SuccessesInHalfOpen = 0
+          Threshold = threshold
+          Duration = duration
+          RequiredSuccesses = 3
+          Lock = obj () }
+
+    module private RandomGen =
+        let private random = Random()
+        let private randomLock = obj ()
+
+        let next minValue maxValue =
+            lock randomLock (fun () -> random.Next(minValue, maxValue))
+
+    let private executeWithResilience<'T> (breaker: CircuitBreaker) (config: ExportConfig) (operation: Async<'T>) =
+        async {
+            let checkCircuitBreaker () =
+                lock breaker.Lock (fun () ->
+                    match breaker.State with
+                    | Open endTime when DateTime.UtcNow < endTime ->
+                        raise (InvalidOperationException("Circuit breaker is open - too many recent failures"))
+                    | Open _ ->
+                        breaker.State <- HalfOpen
+                        breaker.SuccessesInHalfOpen <- 0
+                        Log.info "Circuit breaker entering half-open state"
+                    | _ -> ())
+
+            let recordSuccess () =
+                lock breaker.Lock (fun () ->
+                    match breaker.State with
+                    | HalfOpen ->
+                        breaker.SuccessesInHalfOpen <- breaker.SuccessesInHalfOpen + 1
+
+                        if
+                            breaker.SuccessesInHalfOpen
+                            >= breaker.RequiredSuccesses
+                        then
+                            breaker.State <- Closed
+                            breaker.ConsecutiveFailures <- 0
+                            breaker.SuccessesInHalfOpen <- 0
+                            Log.info "Circuit breaker closed after sufficient successes"
+                    | _ -> breaker.ConsecutiveFailures <- 0)
+
+            let recordFailure () =
+                lock breaker.Lock (fun () ->
+                    breaker.ConsecutiveFailures <- breaker.ConsecutiveFailures + 1
+
+                    if breaker.ConsecutiveFailures >= breaker.Threshold then
+                        breaker.State <- Open(DateTime.UtcNow.Add(breaker.Duration))
+
+                        Log.error (
+                            sprintf "Circuit breaker opened due to %d consecutive failures" breaker.ConsecutiveFailures
+                        ))
+
+            let isRetryable (ex: Exception) =
+                match ex with
+                | :? ServiceUnavailableException -> true
+                | :? SessionExpiredException -> true
+                | :? TransientException -> true
+                | :? IOException -> true
+                | :? TimeoutException -> true
+                | _ -> false
+
+            let rec attemptWithRetry retryCount =
+                async {
+                    try
+                        checkCircuitBreaker ()
+                        let! result = operation
+                        recordSuccess ()
+                        return result
+                    with
+                    | ex when isRetryable ex && retryCount < config.MaxRetries ->
+                        let delay =
+                            let exponentialDelay =
+                                config.RetryDelayMs
+                                * int (Math.Pow(2.0, float retryCount))
+
+                            min config.MaxRetryDelayMs exponentialDelay
+
+                        let jitter = RandomGen.next 0 (delay / 4)
+                        let totalDelay = delay + jitter
+
+                        Log.warn (
+                            sprintf
+                                "Retry %d/%d after %dms: %s"
+                                (retryCount + 1)
+                                config.MaxRetries
+                                totalDelay
+                                ex.Message
+                        )
+
+                        do! Async.Sleep totalDelay
+                        return! attemptWithRetry (retryCount + 1)
+                    | ex ->
+                        recordFailure ()
+                        return raise ex
+                }
+
+            return! attemptWithRetry 0
+        }
+
+    /// Executes a Neo4j query with streaming results
+    let executeQueryStreaming
+        (session: SafeSession)
+        (breaker: CircuitBreaker)
+        (config: ExportConfig)
+        (query: string)
+        (processRecord: IRecord -> Async<unit>)
+        =
+        async {
+            try
+                let! result =
+                    executeWithResilience
+                        breaker
+                        config
+                        (async {
+                            let! cursor = session.RunAsync(query)
+
+                            try
+                                let mutable continueProcessing = true
+
+                                while continueProcessing do
+                                    let! hasMore = cursor.FetchAsync() |> Async.AwaitTask
+
+                                    if hasMore then
+                                        do! processRecord cursor.Current
+                                    else
+                                        continueProcessing <- false
+
+                                let! _ = cursor.ConsumeAsync() |> Async.AwaitTask
+                                return ()
+                            with ex ->
+                                try
+                                    do!
+                                        cursor.ConsumeAsync()
+                                        |> Async.AwaitTask
+                                        |> Async.Ignore
+                                with _ ->
+                                    ()
+
+                                raise ex
+                        })
+
+                return Ok result
+            with
+            | :? AuthenticationException as ex ->
+                return Error(ConnectionError(sprintf "Authentication failed: %s" ex.Message, Some ex))
+            | :? ClientException as ex when ex.Message.Contains("Neo.ClientError.Security") ->
+                return Error(ConnectionError("Authentication failed: Invalid credentials", Some ex))
+            | :? ClientException as ex when ex.Message.Contains("Neo.ClientError.Procedure.ProcedureNotFound") ->
+                return Error(QueryError(query, "Procedure not found", Some ex))
+            | :? TimeoutException as ex ->
+                return
+                    Error(
+                        QueryError(
+                            query,
+                            sprintf "Query timed out after %d seconds" config.QueryTimeoutSeconds,
+                            Some ex
+                        )
+                    )
+            | ex -> return Error(QueryError(query, ex.Message, Some ex))
+        }
+
+    /// Executes a query and returns results as a list. Use only for small result sets.
+    let executeQueryList
+        (session: SafeSession)
+        (breaker: CircuitBreaker)
+        (config: ExportConfig)
+        (query: string)
+        (f: IRecord -> 'T)
+        (maxResults: int)
+        =
+        async {
+            match Validation.validateQuery query, Validation.validateMaxResults maxResults with
+            | Ok validQuery, Ok validMax ->
+                let results = ResizeArray<'T>(validMax)
+                let mutable count = 0
+
+                let mutable exceeded = false
+
+                let processRecord record =
+                    async {
+                        if count >= validMax then
+                            exceeded <- true
+                        else
+                            results.Add(f record)
+                            count <- count + 1
+                    }
+
+                match! executeQueryStreaming session breaker config validQuery processRecord with
+                | Ok _ ->
+                    if exceeded then
+                        return
+                            Error(
+                                QueryError(
+                                    validQuery,
+                                    $"Query returned more than {validMax} records. Use executeQueryStreaming for large result sets.",
+                                    None
+                                )
+                            )
+                    else
+                        return Ok(results |> List.ofSeq)
+                | Error e -> return Error e
+            | Error e1, Error e2 ->
+                let combinedMessage =
+                    match e1, e2 with
+                    | QueryError(_, msg1, _), QueryError(_, msg2, _) ->
+                        sprintf "Multiple query errors: %s; %s" msg1 msg2
+                    | QueryError(_, msg1, _), ConfigError msg2
+                    | ConfigError msg1, QueryError(_, msg2, _) -> sprintf "Query and config errors: %s; %s" msg1 msg2
+                    | ConfigError msg1, ConfigError msg2 -> sprintf "Multiple config errors: %s; %s" msg1 msg2
+                    | QueryError(_, msg1, _), err2 -> sprintf "Multiple errors: %s; %s" msg1 (err2.ToString())
+                    | err1, QueryError(_, msg2, _) -> sprintf "Multiple errors: %s; %s" (err1.ToString()) msg2
+                    | err1, err2 -> sprintf "Multiple errors: %s; %s" (err1.ToString()) (err2.ToString())
+
+                return Error(ConfigError combinedMessage)
+            | Error e, _
+            | _, Error e -> return Error e
+        }
+
+
+=================================================================================
+FILE: Neo4jExport/src/Metadata.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.Collections.Generic
+open System.IO
+open Neo4j.Driver
+
+module Metadata =
+    [<Literal>]
+    let private FORMAT_VERSION = "1.0.0"
+
+    let private collectDatabaseInfo (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) (errorTracker: ErrorTracking.ErrorTracker) =
+        async {
+            let info = Dictionary<string, JsonValue>()
+
+            try
+                let! result =
+                    Neo4j.executeQueryList
+                        session
+                        breaker
+                        config
+                        "CALL dbms.components() YIELD name, versions, edition WHERE name = 'Neo4j Kernel' RETURN versions[0] as version, edition"
+                        (fun record -> record.["version"].As<string>(), record.["edition"].As<string>())
+                        1
+
+                match result with
+                | Ok records ->
+                    match records with
+                    | [ (version, edition) ] ->
+                        info.["version"] <- JString version
+                        info.["edition"] <- JString edition
+                    | _ ->
+                        info.["version"] <- JString "unknown"
+                        info.["edition"] <- JString "unknown"
+                | Error e ->
+                    let msg = sprintf "Failed to retrieve database version info: %A" e
+                    Log.warn msg
+                    errorTracker.AddWarning(msg)
+                    info.["version"] <- JString "unknown"
+                    info.["edition"] <- JString "unknown"
+            with ex ->
+                let msg = sprintf "Exception while collecting database info: %s" ex.Message
+                Log.warn msg
+                errorTracker.AddWarning(msg)
+                info.["version"] <- JString "unknown"
+                info.["edition"] <- JString "unknown"
+
+            try
+                let! dbNameResult =
+                    Neo4j.executeQueryList
+                        session
+                        breaker
+                        config
+                        "CALL db.info() YIELD name RETURN name"
+                        (fun record -> record.["name"].As<string>())
+                        1
+
+                match dbNameResult with
+                | Ok records ->
+                    match records with
+                    | [ name ] -> info.["database_name"] <- JString name
+                    | _ ->
+                        let msg = "Could not retrieve database name, using default"
+                        Log.warn msg
+                        errorTracker.AddWarning(msg)
+                        info.["database_name"] <- JString "neo4j"
+                | Error e ->
+                    let msg = sprintf "Failed to retrieve database name: %A" e
+                    Log.warn msg
+                    errorTracker.AddWarning(msg)
+                    info.["database_name"] <- JString "neo4j"
+            with ex ->
+                let msg = sprintf "Exception while retrieving database name: %s" ex.Message
+                Log.warn msg
+                errorTracker.AddWarning(msg)
+                info.["database_name"] <- JString "neo4j"
+            return Ok(info :> IDictionary<string, JsonValue>)
+        }
+
+    let private collectStatistics (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) (errorTracker: ErrorTracking.ErrorTracker) =
+        async {
+            Log.info "Collecting database statistics..."
+            let stats = Dictionary<string, JsonValue>()
+
+            try
+                let query =
+                    """
+                    MATCH (n)
+                    WITH count(n) as nodeCount
+                    MATCH ()-[r]->()
+                    RETURN nodeCount, count(r) as relCount
+                """
+
+                let! result =
+                    Neo4j.executeQueryList
+                        session
+                        breaker
+                        config
+                        query
+                        (fun record -> record.["nodeCount"].As<int64>(), record.["relCount"].As<int64>())
+                        1
+
+                match result with
+                | Ok records ->
+                    match records with
+                    | [ (nodeCount, relCount) ] ->
+                        stats.["nodeCount"] <- JNumber(decimal nodeCount)
+                        stats.["relCount"] <- JNumber(decimal relCount)
+                    | _ ->
+                        let msg = "No results from statistics query"
+                        Log.warn msg
+                        errorTracker.AddWarning(msg)
+                        stats.["nodeCount"] <- JNumber 0M
+                        stats.["relCount"] <- JNumber 0M
+                | Error e ->
+                    let msg = sprintf "Failed to collect statistics: %A" e
+                    Log.warn msg
+                    errorTracker.AddWarning(msg)
+                    stats.["nodeCount"] <- JNumber 0M
+                    stats.["relCount"] <- JNumber 0M
+            with ex ->
+                let msg = sprintf "Exception while collecting statistics: %s" ex.Message
+                Log.warn msg
+                errorTracker.AddWarning(msg)
+                stats.["nodeCount"] <- JNumber 0M
+                stats.["relCount"] <- JNumber 0M
+
+            stats.["labelCount"] <- JNumber 0M
+            stats.["relTypeCount"] <- JNumber 0M
+            return Ok(stats :> IDictionary<string, JsonValue>)
+        }
+
+    let private collectSchema (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) (errorTracker: ErrorTracking.ErrorTracker) =
+        async {
+            if config.SkipSchemaCollection then
+                Log.info "Skipping schema collection (disabled by configuration)"
+                return Ok(dict [])
+            else
+                Log.info "Collecting basic schema information..."
+                let schema = Dictionary<string, JsonValue>()
+                let jsonConversionError = JString "serialization_error" // A sensible default
+
+                try
+                    let! result =
+                        Neo4j.executeQueryList
+                            session
+                            breaker
+                            config
+                            "CALL db.labels() YIELD label RETURN collect(label) as labels"
+                            (fun record -> record.["labels"].As<List<obj>>())
+                            1
+
+                    match result with
+                    | Ok records ->
+                        match records with
+                        | [ labels ] -> 
+                            schema.["labels"] <- JsonHelpers.toJsonValueWithDefault jsonConversionError Log.warn labels
+                        | _ -> 
+                            let msg = "Failed to collect database labels: unexpected result count"
+                            Log.warn msg
+                            errorTracker.AddWarning(msg)
+                    | Error e -> 
+                        let msg = sprintf "Failed to collect database labels: %A" e
+                        Log.warn msg
+                        errorTracker.AddWarning(msg)
+                with ex ->
+                    let msg = sprintf "Exception while collecting labels: %s" ex.Message
+                    Log.warn msg
+                    errorTracker.AddWarning(msg)
+
+                try
+                    let! result =
+                        Neo4j.executeQueryList
+                            session
+                            breaker
+                            config
+                            "CALL db.relationshipTypes() YIELD relationshipType RETURN collect(relationshipType) as types"
+                            (fun record -> record.["types"].As<List<obj>>())
+                            1
+
+                    match result with
+                    | Ok records ->
+                        match records with
+                        | [ types ] -> 
+                            schema.["relationshipTypes"] <- JsonHelpers.toJsonValueWithDefault jsonConversionError Log.warn types
+                        | _ -> 
+                            let msg = "Failed to collect relationship types: unexpected result count"
+                            Log.warn msg
+                            errorTracker.AddWarning(msg)
+                    | Error e -> 
+                        let msg = sprintf "Failed to collect relationship types: %A" e
+                        Log.warn msg
+                        errorTracker.AddWarning(msg)
+                with ex ->
+                    let msg = sprintf "Exception while collecting relationship types: %s" ex.Message
+                    Log.warn msg
+                    errorTracker.AddWarning(msg)
+
+                return Ok(schema :> IDictionary<string, JsonValue>)
+        }
+
+    let enhanceWithManifest
+        (metadata: FullMetadata)
+        (labelStatsTracker: LabelStatsTracker.Tracker)
+        (exportDuration: float)
+        =
+        let manifestDetails =
+            { TotalExportDurationSeconds = exportDuration
+              FileStatistics =
+                LabelStatsTracker.finalizeAndGetAllStats labelStatsTracker
+                |> List.sortBy (fun s -> s.Label) }
+
+        { metadata with
+            ExportManifest = Some manifestDetails }
+
+    let addErrorSummary (metadata: FullMetadata) (errorTracker: ErrorTracking.ErrorTracker) : FullMetadata =
+        let errorSummary =
+            { ErrorCount = errorTracker.GetErrorCount()
+              WarningCount = errorTracker.GetWarningCount()
+              HasErrors = errorTracker.HasErrors() }
+
+        { metadata with
+            ErrorSummary = Some errorSummary }
+
+    let addFormatInfo (metadata: FullMetadata) (lineState: LineTrackingState) : FullMetadata =
+        let formatInfo =
+            { Type = "jsonl"; MetadataLine = 1 }
+
+        let updatedExportMetadata =
+            { metadata.ExportMetadata with
+                Format = Some formatInfo }
+
+        { metadata with
+            ExportMetadata = updatedExportMetadata }
+
+    let collect
+        (context: ApplicationContext)
+        (session: SafeSession)
+        (breaker: Neo4j.CircuitBreaker)
+        (config: ExportConfig)
+        (errorTracker: ErrorTracking.ErrorTracker)
+        =
+        async {
+            Log.info "Collecting metadata..."
+            let! dbInfo = collectDatabaseInfo session breaker config errorTracker
+            let! stats = collectStatistics session breaker config errorTracker
+            let! schema = collectSchema session breaker config errorTracker
+
+            match dbInfo, stats, schema with
+            | Ok db, Ok st, Ok sc ->
+                if sc.ContainsKey("labels") then
+                    match sc.["labels"] with
+                    | JArray arr -> st.["labelCount"] <- JNumber(decimal arr.Length)
+                    | _ -> st.["labelCount"] <- JNumber 0M
+                else
+                    st.["labelCount"] <- JNumber 0M
+
+                if sc.ContainsKey("relationshipTypes") then
+                    match sc.["relationshipTypes"] with
+                    | JArray arr -> st.["relTypeCount"] <- JNumber(decimal arr.Length)
+                    | _ -> st.["relTypeCount"] <- JNumber 0M
+                else
+                    st.["relTypeCount"] <- JNumber 0M
+
+                let! scriptChecksum = Utils.getScriptChecksum (AppContext.getCancellationToken context) |> Async.AwaitTask
+
+                let exportScript =
+                    { Name = Path.GetFileName(System.Reflection.Assembly.GetExecutingAssembly().Location)
+                      Version = Constants.getVersion ()
+                      Checksum = scriptChecksum
+                      RuntimeVersion = Environment.Version.ToString() }
+
+                let compatibility =
+                    { MinimumReaderVersion = "1.0.0"
+                      DeprecatedFields = []
+                      BreakingChangeVersion = "2.0.0" }
+
+                let compression =
+                    { Recommended = "zstd"
+                      Compatible = [ "zstd"; "gzip"; "brotli"; "none" ]
+                      ExpectedRatio = Some 0.3
+                      Suffix = ".jsonl.zst" }
+
+                let metadata =
+                    { FormatVersion = FORMAT_VERSION
+                      ExportMetadata =
+                        { ExportId = Guid.NewGuid()
+                          ExportTimestampUtc = DateTime.UtcNow
+                          ExportMode = "native_driver_streaming"
+                          Format = None }
+                      Producer = exportScript
+                      SourceSystem =
+                        { Type = "neo4j"
+                          Version =
+                            match db.TryGetValue("version") with
+                            | true, value ->
+                                match JsonHelpers.tryGetString value with
+                                | Ok s -> s
+                                | Error _ -> "unknown"
+                            | _ -> "unknown"
+                          Edition =
+                            match db.TryGetValue("edition") with
+                            | true, value ->
+                                match JsonHelpers.tryGetString value with
+                                | Ok s -> s
+                                | Error _ -> "unknown"
+                            | _ -> "unknown"
+                          Database =
+                            { Name =
+                                match db.TryGetValue("database_name") with
+                                | true, value ->
+                                    match JsonHelpers.tryGetString value with
+                                    | Ok s -> s
+                                    | Error _ -> "neo4j"
+                                | _ -> "neo4j" } }
+                      DatabaseStatistics = st
+                      DatabaseSchema = sc
+                      Environment =
+                        { Hostname = Environment.MachineName
+                          OperatingSystem = Environment.OSVersion.ToString()
+                          User = Environment.UserName
+                          Runtime = sprintf ".NET %s" (Environment.Version.ToString())
+                          Processors = Environment.ProcessorCount
+                          MemoryGb = float (GC.GetTotalMemory(false)) / 1073741824.0 }
+                      Security =
+                        { EncryptionEnabled = config.Uri.Scheme.Contains("+s")
+                          AuthMethod =
+                            if String.IsNullOrEmpty(config.Password) then
+                                "none"
+                            else
+                                "basic"
+                          DataValidation = config.ValidateJsonOutput }
+                      ExportManifest = None
+                      ErrorSummary = None
+                      RecordTypes = RecordTypes.getRecordTypes ()
+                      Compatibility = compatibility
+                      Compression = compression
+                      Reserved =
+                        Some
+                            { Purpose = "JSONL streaming compatibility - enables single-pass export"
+                              Padding = None } }
+
+                Log.info "Metadata collection completed"
+                return Ok metadata
+            | Error e, _, _ -> return Error e
+            | _, Error e, _ -> return Error e
+            | _, _, Error e -> return Error e
+        }
+    /// Estimates maximum metadata size for placeholder allocation
+    let estimateMaxMetadataSize (config: ExportConfig) (baseMetadata: FullMetadata) : int =
+        let actualLabelCount =
+            match baseMetadata.DatabaseSchema.TryGetValue("labels") with
+            | true, value ->
+                match value with
+                | JArray labels -> labels.Length
+                | _ -> 20
+            | _ -> 20
+
+        let jsonOptions =
+            JsonConfig.createDataExportJsonOptions ()
+
+        let currentMetadataBytes =
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                JsonConfig.toSerializableMetadata baseMetadata,
+                jsonOptions
+            )
+
+        let perLabelOverhead = 500
+        let generalBuffer = 4096
+        let recordTypesSize = 2000
+        let compressionSize = 500
+        let compatibilitySize = 300
+
+        let estimatedSize =
+            currentMetadataBytes.Length
+            + (actualLabelCount * perLabelOverhead)
+            + generalBuffer
+            + recordTypesSize
+            + compressionSize
+            + compatibilitySize
+            + 1024
+
+        let withMargin =
+            int (float estimatedSize * 1.2)
+
+        match withMargin with
+        | s when s < 16384 -> 16384
+        | s when s < 32768 -> 32768
+        | s when s < 65536 -> 65536
+        | s -> ((s / 32768) + 1) * 32768
+
+
+=================================================================================
+FILE: Neo4jExport/src/MetadataWriter.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.Text
+open System.Text.Json
+open System.IO
+
+module MetadataWriter =
+
+    let writeMetadataDirectly
+        (stream: Stream)
+        (metadata: FullMetadata)
+        (targetSize: int)
+        (writerOptions: JsonWriterOptions)
+        (lineState: LineTrackingState)
+        : Result<unit, string> =
+
+        use memoryStream = new MemoryStream()
+
+        use writer =
+            new Utf8JsonWriter(memoryStream, writerOptions)
+
+        writer.WriteStartObject()
+
+        writer.WriteString("format_version", metadata.FormatVersion)
+
+        writer.WritePropertyName("export_metadata")
+        writer.WriteStartObject()
+        writer.WriteString("export_id", metadata.ExportMetadata.ExportId.ToString())
+        writer.WriteString("export_timestamp_utc", metadata.ExportMetadata.ExportTimestampUtc.ToString("O"))
+        writer.WriteString("export_mode", metadata.ExportMetadata.ExportMode)
+
+        match metadata.ExportMetadata.Format with
+        | Some format ->
+            writer.WritePropertyName("format")
+            writer.WriteStartObject()
+            writer.WriteString("type", format.Type)
+            writer.WriteNumber("metadata_line", format.MetadataLine)
+
+            for KeyValue(recordType, startLine) in lineState.RecordTypeStartLines do
+                writer.WriteNumber(sprintf "%s_start_line" recordType, startLine)
+
+            writer.WriteEndObject()
+        | None -> ()
+
+        writer.WriteEndObject()
+
+        writer.WritePropertyName("producer")
+        JsonSerializer.Serialize(writer, metadata.Producer)
+
+        writer.WritePropertyName("source_system")
+        writer.WriteStartObject()
+        writer.WriteString("type", metadata.SourceSystem.Type)
+        writer.WriteString("version", metadata.SourceSystem.Version)
+        writer.WriteString("edition", metadata.SourceSystem.Edition)
+
+        writer.WritePropertyName("database")
+        writer.WriteStartObject()
+        writer.WriteString("name", metadata.SourceSystem.Database.Name)
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+
+        match metadata.ErrorSummary with
+        | Some errorSummary ->
+            writer.WritePropertyName("error_summary")
+            writer.WriteStartObject()
+            writer.WriteNumber("error_count", errorSummary.ErrorCount)
+            writer.WriteNumber("warning_count", errorSummary.WarningCount)
+            writer.WriteBoolean("has_errors", errorSummary.HasErrors)
+            writer.WriteEndObject()
+        | None -> ()
+
+        writer.WritePropertyName("database_statistics")
+        JsonHelpers.writeJsonValue writer (JObject metadata.DatabaseStatistics)
+
+        writer.WritePropertyName("supported_record_types")
+        writer.WriteStartArray()
+
+        for recordType in metadata.RecordTypes do
+            writer.WriteStartObject()
+            writer.WriteString("type_name", recordType.TypeName)
+            writer.WriteString("description", recordType.Description)
+            writer.WritePropertyName("required_fields")
+            writer.WriteStartArray()
+
+            for field in recordType.RequiredFields do
+                writer.WriteStringValue(field)
+
+            writer.WriteEndArray()
+
+            match recordType.OptionalFields with
+            | Some fields ->
+                writer.WritePropertyName("optional_fields")
+                writer.WriteStartArray()
+
+                for field in fields do
+                    writer.WriteStringValue(field)
+
+                writer.WriteEndArray()
+            | None -> ()
+
+            writer.WriteEndObject()
+
+        writer.WriteEndArray()
+
+        writer.WritePropertyName("environment")
+        JsonSerializer.Serialize(writer, metadata.Environment)
+
+        writer.WritePropertyName("security")
+        JsonSerializer.Serialize(writer, metadata.Security)
+
+        writer.WritePropertyName("compatibility")
+        writer.WriteStartObject()
+        writer.WriteString("minimum_reader_version", metadata.Compatibility.MinimumReaderVersion)
+        writer.WritePropertyName("deprecated_fields")
+        writer.WriteStartArray()
+
+        for field in metadata.Compatibility.DeprecatedFields do
+            writer.WriteStringValue(field)
+
+        writer.WriteEndArray()
+        writer.WriteString("breaking_change_version", metadata.Compatibility.BreakingChangeVersion)
+        writer.WriteEndObject()
+
+        writer.WritePropertyName("compression")
+        writer.WriteStartObject()
+        writer.WriteString("recommended", metadata.Compression.Recommended)
+        writer.WritePropertyName("compatible")
+        writer.WriteStartArray()
+
+        for format in metadata.Compression.Compatible do
+            writer.WriteStringValue(format)
+
+        writer.WriteEndArray()
+
+        writer.WritePropertyName("expected_ratio")
+
+        match metadata.Compression.ExpectedRatio with
+        | Some ratio -> writer.WriteNumberValue(ratio)
+        | None -> writer.WriteNullValue()
+
+        writer.WriteString("suffix", metadata.Compression.Suffix)
+        writer.WriteEndObject()
+
+        // Database schema
+        writer.WritePropertyName("database_schema")
+        JsonHelpers.writeJsonValue writer (JObject metadata.DatabaseSchema)
+
+        writer.WritePropertyName("export_manifest")
+        JsonSerializer.Serialize(writer, metadata.ExportManifest)
+
+        match metadata.Reserved with
+        | Some reserved ->
+            writer.WritePropertyName("_reserved")
+            writer.WriteStartObject()
+            writer.WriteString("purpose", reserved.Purpose)
+            writer.WriteEndObject()
+        | None -> ()
+
+        writer.WriteEndObject()
+        writer.Flush()
+
+        let baseBytes = memoryStream.ToArray()
+
+        match JsonConfig.calculateDirectPaddingBytes baseBytes.Length targetSize with
+        | Error msg -> Error msg
+        | Ok 0 ->
+            stream.Write(baseBytes, 0, baseBytes.Length)
+            Ok()
+        | Ok paddingBytesNeeded ->
+            let baseJsonLength = baseBytes.Length - 1
+            stream.Write(baseBytes, 0, baseJsonLength)
+
+            let paddingPrefix =
+                Encoding.UTF8.GetBytes(",\"padding\":\"")
+
+            stream.Write(paddingPrefix, 0, paddingPrefix.Length)
+
+            let paddingBytes =
+                Array.create paddingBytesNeeded (byte 32uy)
+
+            stream.Write(paddingBytes, 0, paddingBytes.Length)
+
+            let closingBytes =
+                Encoding.UTF8.GetBytes("\"}")
+
+            stream.Write(closingBytes, 0, closingBytes.Length)
+
+            let totalWritten =
+                baseJsonLength
+                + paddingPrefix.Length
+                + paddingBytesNeeded
+                + closingBytes.Length
+
+            if totalWritten <> targetSize then
+                Error(sprintf "Byte count mismatch: wrote %d, expected %d" totalWritten targetSize)
+            else
+                Ok()
+
+
+=================================================================================
+FILE: Neo4jExport/src/Export.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open Neo4jExport.ExportCore
+
+/// Core export functionality for streaming Neo4j data to JSONL format.
+/// Uses JavaScriptEncoder.UnsafeRelaxedJsonEscaping to preserve data
+/// exactly as stored in Neo4j, without HTML escaping that would transform data.
+module Export =
+    let createLabelStatsTracker () = LabelStatsTracker.create ()
+
+    let getLabelStatsList tracker =
+        LabelStatsTracker.finalizeAndGetAllStats tracker
+        |> List.sortBy (fun s -> s.Label)
+
+    let exportNodesUnified =
+        ExportCore.exportNodesUnified
+
+    let exportRelationships =
+        ExportCore.exportRelationships
+
+    let exportErrors = ExportCore.exportErrors
+
+    let finalizeExport =
+        ExportCore.finalizeExport
+
+
+=================================================================================
+FILE: Neo4jExport/src/Monitoring.fs
+=================================================================================
+
+
+module Neo4jExport.Monitoring
+
+open System
+open System.IO
+open Neo4jExport
+
+type ResourceMonitor(context: ApplicationContext, config: ExportConfig) =
+    let checkInterval =
+        TimeSpan.FromSeconds(30.0)
+
+    let agent =
+        MailboxProcessor.Start(fun inbox ->
+            let rec loop (state: ResourceState) =
+                async {
+                    if
+                        state.IsRunning
+                        && DateTime.UtcNow - state.LastCheck >= checkInterval
+                    then
+                        let drive =
+                            DriveInfo(Path.GetPathRoot(config.OutputDirectory))
+
+                        let availableGB =
+                            float drive.AvailableFreeSpace / 1073741824.0
+
+                        if availableGB < float config.MinDiskGb then
+                            Log.fatal (sprintf "Disk space critically low: %.2f GB" availableGB)
+                            context.CancellationTokenSource.Cancel()
+
+                        return!
+                            loop
+                                { state with
+                                    LastCheck = DateTime.UtcNow }
+                    else
+                        let! msgOpt = inbox.TryReceive(1000)
+
+                        match msgOpt with
+                        | Some(CheckResources reply) ->
+                            reply.Reply(Ok())
+
+                            return!
+                                loop
+                                    { state with
+                                        LastCheck = DateTime.UtcNow }
+                        | Some Stop -> return ()
+                        | None -> return! loop state
+                }
+
+            loop
+                { LastCheck = DateTime.UtcNow
+                  IsRunning = true })
+
+    member _.Start() = ()
+
+    member _.Stop() = agent.Post(Stop)
+
+    interface IDisposable with
+        member _.Dispose() =
+            agent.Post(Stop)
+            (agent :> IDisposable).Dispose()
+
+let startResourceMonitor context config =
+    let monitor =
+        new ResourceMonitor(context, config)
+
+    monitor.Start()
+    monitor
+
+
+=================================================================================
+FILE: Neo4jExport/src/SignalHandling.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.Threading
+#if NET6_0_OR_GREATER
+open System.Runtime.InteropServices
+#endif
+
+module SignalHandling =
+    let registerHandlers (context: ApplicationContext) : IDisposable option =
+        AppDomain.CurrentDomain.UnhandledException.Add(fun args ->
+            let ex = args.ExceptionObject :?> Exception
+            Log.fatal (sprintf "Unhandled exception: %s" ex.Message)
+            Log.logException ex)
+
+        Console.CancelKeyPress.Add(fun args ->
+            if not (AppContext.isCancellationRequested context) then
+                Log.warn "Received interrupt signal (SIGINT), requesting shutdown..."
+                AppContext.cancel context
+                args.Cancel <- true)
+
+#if NET6_0_OR_GREATER
+        let sigtermRegistration =
+            PosixSignalRegistration.Create(
+                PosixSignal.SIGTERM,
+                Action<PosixSignalContext>(fun _ ->
+                    if not (AppContext.isCancellationRequested context) then
+                        Log.warn "Received SIGTERM signal, requesting shutdown..."
+                        AppContext.cancel context)
+            )
+        
+        Some(sigtermRegistration :> IDisposable)
+#else
+        let registerSigtermFallback () =
+            try
+                let posixSignalType =
+                    Type.GetType("System.Runtime.InteropServices.PosixSignalRegistration, System.Runtime")
+
+                let posixSignalEnum =
+                    Type.GetType("System.Runtime.InteropServices.PosixSignal, System.Runtime")
+
+                if posixSignalType <> null && posixSignalEnum <> null then
+                    let sigterm =
+                        Enum.Parse(posixSignalEnum, "SIGTERM")
+
+                    let createMethod =
+                        posixSignalType.GetMethod(
+                            "Create",
+                            [| posixSignalEnum
+                               typeof<Action<obj>> |]
+                        )
+
+                    if createMethod <> null then
+                        let handler =
+                            Action<obj>(fun _ ->
+                                if not (AppContext.isCancellationRequested context) then
+                                    Log.warn "Received SIGTERM signal, requesting shutdown..."
+                                    AppContext.cancel context)
+
+                        let registration = createMethod.Invoke(null, [| sigterm; box handler |])
+                        
+                        Log.debug "SIGTERM handler registered via reflection"
+                        
+                        // Check if the result implements IDisposable
+                        match registration with
+                        | :? IDisposable as disposable -> Some disposable
+                        | _ -> None
+                    else
+                        Log.debug "PosixSignalRegistration.Create method not found"
+                        None
+                else
+                    Log.debug "PosixSignalRegistration types not available"
+                    None
+            with ex ->
+                Log.debug (sprintf "Could not register SIGTERM handler: %s" ex.Message)
+                None
+
+        registerSigtermFallback ()
+#endif
+
+
+=================================================================================
+FILE: Neo4jExport/src/Cleanup.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System.IO
+open System.Diagnostics
+
+module Cleanup =
+    let registerTempFile (context: ApplicationContext) (path: string) = AppContext.addTempFile context path
+
+    let performCleanup (context: ApplicationContext) (reason: string) =
+        Log.info (sprintf "Performing cleanup: %s" reason)
+
+        if not (AppContext.isCancellationRequested context) then
+            AppContext.cancel context
+
+        for proc in context.ActiveProcesses do
+            try
+                if not proc.HasExited then
+                    let mutable exited = false
+
+                    if proc.MainWindowHandle <> System.IntPtr.Zero then
+                        proc.CloseMainWindow() |> ignore
+                        exited <- proc.WaitForExit(5000)
+
+                    if not exited && not proc.HasExited then
+                        proc.Kill()
+                        Log.debug (sprintf "Forcefully terminated process: %d" proc.Id)
+                    else
+                        Log.debug (sprintf "Gracefully terminated process: %d" proc.Id)
+            with ex ->
+                let procId =
+                    try
+                        proc.Id.ToString()
+                    with _ ->
+                        "unknown"
+
+                Log.warn (sprintf "Failed to terminate process %s: %s" procId ex.Message)
+
+        for file in context.TempFiles do
+            try
+                if File.Exists(file) then
+                    File.Delete(file)
+                    Log.debug (sprintf "Deleted temp file: %s" file)
+            with ex ->
+                Log.warn (sprintf "Failed to delete temp file %s: %s" file ex.Message)
+
+        Log.info "Cleanup completed"
+
+
+=================================================================================
+FILE: Neo4jExport/src/Preflight.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.IO
+open System.Globalization
+open Neo4j.Driver
+
+type AsyncResultBuilder() =
+    member _.Return(x) = async { return Ok x }
+    member _.ReturnFrom(x) = x
+
+    member _.Bind(x, f) =
+        async {
+            match! x with
+            | Ok v -> return! f v
+            | Error e -> return Error e
+        }
+
+    member _.Zero() = async { return Ok() }
+
+/// Memory estimation configuration
+type MemoryEstimationConfig =
+    { AverageRecordSize: int64
+      ProcessingOverheadMultiplier: float
+      MinimumReservation: int64 }
+
+module Preflight =
+    let private asyncResult =
+        AsyncResultBuilder()
+
+    let private getLinuxAvailableMemory () =
+        try
+            let lines =
+                System.IO.File.ReadAllLines("/proc/meminfo")
+
+            let availableLine =
+                lines
+                |> Array.tryFind (fun line -> line.StartsWith("MemAvailable:"))
+
+            match availableLine with
+            | Some line ->
+                let parts =
+                    line.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
+
+                if parts.Length >= 2 then
+                    let kbValue = int64 parts.[1]
+                    kbValue * 1024L
+                else
+                    Constants.Defaults.ConservativeMemoryFallback
+            | None ->
+                Log.warn "MemAvailable not found in /proc/meminfo"
+                Constants.Defaults.ConservativeMemoryFallback
+        with ex ->
+            Log.warn (sprintf "Failed to parse /proc/meminfo: %s" ex.Message)
+            Constants.Defaults.ConservativeMemoryFallback
+
+    let private getPlatformSpecificMemory () =
+        try
+            if
+                System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+                    System.Runtime.InteropServices.OSPlatform.Linux
+                )
+            then
+                getLinuxAvailableMemory ()
+            elif
+                System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+                    System.Runtime.InteropServices.OSPlatform.Windows
+                )
+            then
+                Log.warn "Memory detection not implemented for Windows. Please monitor memory usage manually."
+                0L
+            else
+                Log.warn "Platform-specific memory detection not available, using conservative estimate"
+                Constants.Defaults.ConservativeMemoryFallback
+        with ex ->
+            Log.warn (sprintf "Platform detection failed: %s" ex.Message)
+            Constants.Defaults.ConservativeMemoryFallback
+
+    /// Gets available system memory using GC info or platform-specific methods
+    let private getAvailableSystemMemory () =
+        try
+            let memInfo = GC.GetGCMemoryInfo()
+
+            let availableMemory =
+                memInfo.TotalAvailableMemoryBytes
+
+            Log.debug (sprintf "System memory info - Total available: %s" (Utils.formatBytes availableMemory))
+
+            availableMemory
+        with
+        | :? NotSupportedException as ex ->
+            Log.warn (sprintf "GC memory info not supported on this platform: %s" ex.Message)
+            getPlatformSpecificMemory ()
+        | ex ->
+            Log.warn (sprintf "Failed to get system memory info: %s" ex.Message)
+            Constants.Defaults.ConservativeMemoryFallback
+
+    let private defaultMemoryEstimationConfig =
+        { AverageRecordSize = Constants.Defaults.AverageRecordSizeBytes
+          ProcessingOverheadMultiplier = Constants.Defaults.ProcessingOverheadMultiplier
+          MinimumReservation = Constants.Defaults.MinimumMemoryReservation }
+
+    let private estimateExportMemoryUsage (config: ExportConfig) =
+        let estimationConfig =
+            let getEnvInt64 name defaultValue =
+                match Environment.GetEnvironmentVariable(name) with
+                | null
+                | "" -> defaultValue
+                | value ->
+                    match Int64.TryParse(value) with
+                    | true, v -> v
+                    | false, _ -> defaultValue
+
+            let getEnvFloat name defaultValue =
+                match Environment.GetEnvironmentVariable(name) with
+                | null
+                | "" -> defaultValue
+                | value ->
+                    match Double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture) with
+                    | true, v -> v
+                    | false, _ -> defaultValue
+
+            { AverageRecordSize =
+                getEnvInt64 Constants.Env.AverageRecordSize defaultMemoryEstimationConfig.AverageRecordSize
+              ProcessingOverheadMultiplier =
+                getEnvFloat Constants.Env.OverheadMultiplier defaultMemoryEstimationConfig.ProcessingOverheadMultiplier
+              MinimumReservation =
+                getEnvInt64 Constants.Env.MinMemoryReservation defaultMemoryEstimationConfig.MinimumReservation }
+
+        let batchMemory =
+            int64 config.BatchSize
+            * estimationConfig.AverageRecordSize
+
+        let withOverhead =
+            int64 (
+                float batchMemory
+                * estimationConfig.ProcessingOverheadMultiplier
+            )
+
+        let estimated =
+            max withOverhead estimationConfig.MinimumReservation
+
+        Log.debug (
+            sprintf
+                "Memory estimation - Batch size: %d, Avg record: %s, Overhead: %.1fx, Estimated: %s"
+                config.BatchSize
+                (Utils.formatBytes estimationConfig.AverageRecordSize)
+                estimationConfig.ProcessingOverheadMultiplier
+                (Utils.formatBytes estimated)
+        )
+
+        estimated
+
+    let private checkDiskSpace (config: ExportConfig) =
+        async {
+            Log.info "Checking disk space..."
+
+            try
+                let root =
+                    Path.GetPathRoot(config.OutputDirectory)
+
+                if String.IsNullOrWhiteSpace(root) then
+                    return
+                        Error(
+                            FileSystemError(
+                                config.OutputDirectory,
+                                "Could not determine drive root from output path",
+                                None
+                            )
+                        )
+                elif root.StartsWith(@"\\") then
+                    return
+                        Error(
+                            FileSystemError(
+                                config.OutputDirectory,
+                                "UNC paths are not supported for disk space checking",
+                                None
+                            )
+                        )
+                else
+                    let outputPath =
+                        Path.GetFullPath(config.OutputDirectory)
+
+                    let canCreateDirectory =
+                        if Directory.Exists(outputPath) then
+                            true
+                        else
+                            let parentDir =
+                                Path.GetDirectoryName(outputPath)
+
+                            not (String.IsNullOrEmpty(parentDir))
+                            && Directory.Exists(parentDir)
+
+                    if not canCreateDirectory then
+                        let parentDir =
+                            Path.GetDirectoryName(outputPath)
+
+                        return
+                            Error(
+                                FileSystemError(
+                                    config.OutputDirectory,
+                                    sprintf
+                                        "Parent directory does not exist: %s"
+                                        (if String.IsNullOrEmpty(parentDir) then
+                                             "<none>"
+                                         else
+                                             parentDir),
+                                    None
+                                )
+                            )
+                    else
+                        let drive = DriveInfo(root)
+
+                        let availableBytes =
+                            drive.AvailableFreeSpace
+
+                        let requiredBytes =
+                            config.MinDiskGb * 1024L * 1024L * 1024L
+
+                        if availableBytes < requiredBytes then
+                            return Error(DiskSpaceError(requiredBytes, availableBytes))
+                        else
+                            Log.info (
+                                sprintf "Disk space OK: %s available on %s" (Utils.formatBytes availableBytes) root
+                            )
+
+                            return Ok()
+            with ex ->
+                return
+                    Error(
+                        FileSystemError(
+                            config.OutputDirectory,
+                            sprintf "Failed to check disk space: %s" ex.Message,
+                            Some ex
+                        )
+                    )
+        }
+
+    let private checkMemory (config: ExportConfig) =
+        async {
+            Log.info "Checking memory constraints..."
+
+            try
+                let currentProcess =
+                    System.Diagnostics.Process.GetCurrentProcess()
+
+                let workingSetBytes =
+                    currentProcess.WorkingSet64
+
+                let gcMemory = GC.GetTotalMemory(false)
+
+                let maxMemoryBytes =
+                    config.MaxMemoryMb * 1024L * 1024L
+
+                Log.info (
+                    sprintf
+                        "Memory usage - Managed heap: %s, Process total: %s"
+                        (Utils.formatBytes gcMemory)
+                        (Utils.formatBytes workingSetBytes)
+                )
+
+                let currentMemory =
+                    max gcMemory workingSetBytes
+
+                if currentMemory > maxMemoryBytes then
+                    return
+                        Error(
+                            MemoryError(
+                                sprintf
+                                    "Current memory usage exceeds limit. Current: %s, Max: %s"
+                                    (Utils.formatBytes currentMemory)
+                                    (Utils.formatBytes maxMemoryBytes)
+                            )
+                        )
+                else
+                    let availableMemory =
+                        getAvailableSystemMemory ()
+
+                    let estimatedNeed =
+                        estimateExportMemoryUsage config
+
+                    if availableMemory < estimatedNeed then
+                        return
+                            Error(
+                                MemoryError(
+                                    sprintf
+                                        "Insufficient memory for export. Available: %s, Estimated need: %s"
+                                        (Utils.formatBytes availableMemory)
+                                        (Utils.formatBytes estimatedNeed)
+                                )
+                            )
+                    else
+                        Log.info (sprintf "Memory OK: %s available for export" (Utils.formatBytes availableMemory))
+                        return Ok()
+            with ex ->
+                Log.error (sprintf "Failed to check memory: %s" ex.Message)
+                return Error(MemoryError(sprintf "Failed to perform memory check: %s" ex.Message))
+        }
+
+    let private checkDatabaseConnection (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) =
+        async {
+            Log.info "Verifying database connection..."
+
+            let mutable testResult = None
+
+            let processRecord (record: IRecord) =
+                async { testResult <- Some(record.["test"].As<int>()) }
+
+            let! result = Neo4j.executeQueryStreaming session breaker config "RETURN 1 as test" processRecord
+
+            match result with
+            | Ok _ ->
+                if testResult = Some 1 then
+                    Log.info "Database connection verified"
+                    return Ok()
+                else
+                    Log.warn "Unexpected: test query returned unexpected result"
+                    return Ok()
+            | Error e -> return Error e
+        }
+
+    /// Creates output directory if it doesn't exist
+    let initializeFileSystem (config: ExportConfig) =
+        async {
+            try
+                if not (Directory.Exists(config.OutputDirectory)) then
+                    Log.info (sprintf "Creating output directory: %s" config.OutputDirectory)
+
+                    Directory.CreateDirectory(config.OutputDirectory)
+                    |> ignore
+
+                return Ok()
+            with ex ->
+                return
+                    Error(
+                        FileSystemError(
+                            config.OutputDirectory,
+                            sprintf "Failed to create output directory: %s" ex.Message,
+                            Some ex
+                        )
+                    )
+        }
+
+    /// Runs all preflight checks
+    let runAllChecks
+        (context: ApplicationContext)
+        (session: SafeSession)
+        (breaker: Neo4j.CircuitBreaker)
+        (config: ExportConfig)
+        =
+        asyncResult {
+            Log.info "Running preflight checks..."
+
+            do! checkDiskSpace config
+            do! checkMemory config
+            do! checkDatabaseConnection session breaker config
+
+            Log.info "All preflight checks passed"
+            return ()
+        }
+
+
+=================================================================================
+FILE: Neo4jExport/src/Workflow.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+open System.IO
+open System.Text
+open Neo4j.Driver
+open ErrorTracking
+
+/// Main workflow orchestration for the export process
+module Workflow =
+    let handleError (error: AppError) =
+        let exitCode, message =
+            match error with
+            | ConfigError msg -> 6, sprintf "Configuration Error: %s" msg
+            | ConnectionError(msg, _) -> 2, sprintf "Connection Error: %s" msg
+            | AuthenticationError msg -> 6, sprintf "Authentication Error: %s" msg
+            | QueryError(query, msg, _) ->
+                7, sprintf "Query Error: %s\nQuery: %s" msg (Security.sanitizeForLogging query 200)
+            | DataCorruptionError(line, msg, sample) ->
+                5,
+                sprintf
+                    "Data Corruption at line %d: %s%s"
+                    line
+                    msg
+                    (sample
+                     |> Option.map (sprintf "\nSample: %s")
+                     |> Option.defaultValue "")
+            | DiskSpaceError(required, available) ->
+                3,
+                sprintf
+                    "Insufficient Disk Space: Need %s, have %s"
+                    (Utils.formatBytes required)
+                    (Utils.formatBytes available)
+            | MemoryError msg -> 3, sprintf "Memory Error: %s" msg
+            | ExportError(msg, _) -> 5, sprintf "Export Error: %s" msg
+            | FileSystemError(path, msg, _) -> 3, sprintf "File System Error: %s\nPath: %s" msg path
+            | SecurityError msg -> 6, sprintf "Security Error: %s" msg
+            | TimeoutError(op, duration) -> 5, sprintf "Timeout Error: %s timed out after %O" op duration
+
+        Log.fatal message
+        exitCode
+
+    /// Performs export with efficient single-pass data writing and statistics collection
+    let private performExport context session config metadata errorTracker : Async<Result<unit, AppError>> =
+        async {
+            let exportId =
+                metadata.ExportMetadata.ExportId
+
+            let exportStartTime = DateTime.UtcNow
+
+            let newlineBytes =
+                Encoding.UTF8.GetBytes(Environment.NewLine)
+
+            let finalTempFile =
+                Path.Combine(
+                    config.OutputDirectory,
+                    sprintf
+                        "neo4j_export.tmp.%d.%s"
+                        (System.Diagnostics.Process.GetCurrentProcess().Id)
+                        (Path.GetRandomFileName())
+                )
+
+            Cleanup.registerTempFile context finalTempFile
+
+            try
+                use finalStream =
+                    new FileStream(
+                        finalTempFile,
+                        FileMode.Create,
+                        FileAccess.ReadWrite,
+                        FileShare.Read,
+                        bufferSize = 65536,
+                        options = FileOptions.RandomAccess
+                    )
+
+                // Write metadata placeholder
+                let placeholderSize =
+                    Metadata.estimateMaxMetadataSize config metadata
+
+                let placeholder =
+                    Array.create placeholderSize (byte ' ')
+
+                do!
+                    finalStream.WriteAsync(placeholder, 0, placeholder.Length)
+                    |> Async.AwaitTask
+
+                do!
+                    finalStream.WriteAsync(newlineBytes, 0, newlineBytes.Length)
+                    |> Async.AwaitTask
+
+                let dataStartPosition = finalStream.Position
+
+                let initialStats =
+                    { RecordsProcessed = 0L
+                      RecordsSkipped = 0L
+                      BytesWritten = 0L
+                      StartTime = DateTime.UtcNow }
+
+                let lineTracker = LineTracking.create ()
+
+                let! nodeResult =
+                    Export.exportNodesUnified
+                        context
+                        session
+                        config
+                        finalStream
+                        initialStats
+                        exportId
+                        errorTracker
+                        lineTracker
+
+                match nodeResult with
+                | Error e -> return Error e
+                | Ok(nodeStats, labelStats, lineStateAfterNodes) ->
+                    match!
+                        Export.exportRelationships
+                            context
+                            session
+                            config
+                            finalStream
+                            nodeStats
+                            exportId
+                            errorTracker
+                            lineStateAfterNodes
+                    with
+                    | Error e -> return Error e
+                    | Ok(finalStats, lineStateAfterRels) ->
+                        // Export any error/warning records if they exist
+                        let mutable finalStatsWithErrors =
+                            finalStats
+
+                        let mutable finalLineState =
+                            lineStateAfterRels
+
+                        if errorTracker.HasErrors() then
+                            let! (errorCount, lineStateAfterErrors) =
+                                Export.exportErrors finalStream errorTracker exportId lineStateAfterRels
+
+                            Log.warn (sprintf "Exported %d error/warning records" errorCount)
+                            finalLineState <- lineStateAfterErrors
+
+                            finalStatsWithErrors <-
+                                { finalStats with
+                                    RecordsProcessed = finalStats.RecordsProcessed + errorCount }
+
+                        do! finalStream.FlushAsync() |> Async.AwaitTask
+
+                        let completedStats =
+                            ExportStats.complete finalStatsWithErrors DateTime.UtcNow
+
+                        let exportDuration =
+                            (DateTime.UtcNow - exportStartTime).TotalSeconds
+
+                        let enhancedMetadata =
+                            metadata
+                            |> fun m -> Metadata.enhanceWithManifest m labelStats exportDuration
+                            |> fun m -> Metadata.addErrorSummary m errorTracker
+                            |> fun m -> Metadata.addFormatInfo m finalLineState
+
+                        let dataEndPosition = finalStream.Position
+
+                        finalStream.Seek(0L, SeekOrigin.Begin) |> ignore
+
+                        match
+                            MetadataWriter.writeMetadataDirectly
+                                finalStream
+                                enhancedMetadata
+                                placeholderSize
+                                (JsonConfig.createWriterOptions ())
+                                finalLineState
+                        with
+                        | Error msg -> return Error(ExportError(sprintf "Failed to write metadata: %s" msg, None))
+                        | Ok() ->
+                            do!
+                                finalStream.WriteAsync(newlineBytes, 0, newlineBytes.Length)
+                                |> Async.AwaitTask
+
+                            match!
+                                Export.finalizeExport context config enhancedMetadata finalTempFile completedStats
+                            with
+                            | Error e -> return Error e
+                            | Ok() -> return Ok()
+            with
+            | :? OperationCanceledException -> return Error(ExportError("Export cancelled by user", None))
+            | ex ->
+                Log.logException ex
+                return Error(ExportError("Export failed", Some ex))
+        }
+
+    /// Executes the complete export workflow with error handling
+    let runExport (context: ApplicationContext) (config: ExportConfig) =
+        async {
+            use driver =
+                GraphDatabase.Driver(config.Uri, AuthTokens.Basic(config.User, config.Password))
+
+            let! connectionResult =
+                driver.VerifyConnectivityAsync()
+                |> Async.AwaitTask
+                |> Async.Catch
+
+            match connectionResult with
+            | Choice1Of2 _ ->
+                Log.info "Successfully connected to Neo4j"
+
+                use session =
+                    new SafeSession(driver.AsyncSession())
+
+                let breaker =
+                    Neo4j.createCircuitBreaker 5 (TimeSpan.FromSeconds(30.0))
+
+                use monitor =
+                    Monitoring.startResourceMonitor context config
+
+                // Create ErrorTracker early to capture all warnings/errors
+                let errorTracker = new ErrorTracker()
+
+                match! Preflight.initializeFileSystem config with
+                | Error e -> return Error e
+                | Ok() ->
+                    match! Preflight.runAllChecks context session breaker config with
+                    | Error e -> return Error e
+                    | Ok() ->
+                        match! Metadata.collect context session breaker config errorTracker with
+                        | Error e -> return Error e
+                        | Ok metadata ->
+                            let finalFilename =
+                                Configuration.generateMetadataFilename config.OutputDirectory metadata
+
+                            Log.info (sprintf "Export filename: %s" (System.IO.Path.GetFileName(finalFilename)))
+                            Log.info "Collecting detailed statistics for export manifest"
+                            return! performExport context session config metadata errorTracker
+            | Choice2Of2 ex -> return Error(ConnectionError("Failed to connect to Neo4j", Some ex))
+        }
+
+
+=================================================================================
+FILE: Neo4jExport/src/Program.fs
+=================================================================================
+
+
+namespace Neo4jExport
+
+open System
+
+/// Application entry point and workflow coordination
+module Program =
+
+    let private loadConfiguration () =
+        try
+            Configuration.getConfig ()
+        with ex ->
+            Error(ConfigError(sprintf "Failed to load configuration: %s" ex.Message))
+
+    let private executeMain (context: ApplicationContext) =
+        Log.info (sprintf "=== Neo4j Export Tool %s ===" (Constants.getVersionString ()))
+        Log.info "Neo4j database export to JSONL format"
+
+        match loadConfiguration () with
+        | Error err -> Workflow.handleError err
+        | Ok config ->
+            if config.EnableDebugLogging then
+                Log.setMinLevel "Debug"
+                Log.debug "Debug logging enabled"
+
+            try
+                Workflow.runExport context config
+                |> Async.RunSynchronously
+                |> function
+                    | Ok() ->
+                        Log.info "Export completed successfully"
+                        0
+                    | Error err -> Workflow.handleError err
+            with
+            | :? OperationCanceledException ->
+                Log.warn "Export cancelled by user"
+                130
+            | ex ->
+                Log.fatal (sprintf "Unexpected error: %s" ex.Message)
+                Log.logException ex
+                1
+
+    let private performFinalCleanup (context: ApplicationContext) =
+        try
+            if
+                not (Seq.isEmpty context.TempFiles)
+                || not (Seq.isEmpty context.ActiveProcesses)
+            then
+                Log.debug "Performing final cleanup of resources"
+                Cleanup.performCleanup context "Application exit"
+                Log.debug "Cleanup completed successfully"
+        with ex ->
+            Log.error (sprintf "Error during final cleanup: %s" ex.Message)
+            Log.logException ex
+
+    [<EntryPoint>]
+    let main argv =
+        use context = AppContext.create ()
+        let signalRegistration = SignalHandling.registerHandlers context
+
+        try
+            let exitCode = executeMain context
+            performFinalCleanup context
+            
+            // Dispose signal registration if present
+            signalRegistration |> Option.iter (fun reg -> reg.Dispose())
+            
+            exitCode
+        with ex ->
+            Log.fatal (sprintf "Catastrophic error: %s" ex.Message)
+            Log.logException ex
+            performFinalCleanup context
+            
+            // Dispose signal registration if present
+            signalRegistration |> Option.iter (fun reg -> reg.Dispose())
+            
+            1
+

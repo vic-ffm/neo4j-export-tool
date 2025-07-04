@@ -28,6 +28,10 @@ open System
 module Program =
 
     let private loadConfiguration () =
+        // FAIL-FAST DESIGN: Configuration validation happens first, before any expensive operations.
+        // This includes creating the output directory to verify path validity and permissions.
+        // By failing early on configuration issues, we avoid wasting time establishing database
+        // connections or allocating resources for exports that cannot succeed.
         try
             Configuration.getConfig ()
         with ex ->
@@ -77,14 +81,26 @@ module Program =
     [<EntryPoint>]
     let main argv =
         use context = AppContext.create ()
-        SignalHandling.registerHandlers context
+
+        let signalRegistration =
+            SignalHandling.registerHandlers context
 
         try
             let exitCode = executeMain context
             performFinalCleanup context
+
+            // Dispose signal registration if present
+            signalRegistration
+            |> Option.iter (fun reg -> reg.Dispose())
+
             exitCode
         with ex ->
             Log.fatal (sprintf "Catastrophic error: %s" ex.Message)
             Log.logException ex
             performFinalCleanup context
+
+            // Dispose signal registration if present
+            signalRegistration
+            |> Option.iter (fun reg -> reg.Dispose())
+
             1

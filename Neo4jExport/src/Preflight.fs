@@ -200,53 +200,23 @@ module Preflight =
                             )
                         )
                 else
-                    let outputPath =
-                        Path.GetFullPath(config.OutputDirectory)
+                    // NOTE: By the time this check runs, the output directory has already been created
+                    // during configuration validation (Configuration.validateOutputDirectory). We can
+                    // safely assume it exists and just check the disk space of its root drive.
+                    let drive = DriveInfo(root)
 
-                    let canCreateDirectory =
-                        if Directory.Exists(outputPath) then
-                            true
-                        else
-                            let parentDir =
-                                Path.GetDirectoryName(outputPath)
+                    let availableBytes =
+                        drive.AvailableFreeSpace
 
-                            not (String.IsNullOrEmpty(parentDir))
-                            && Directory.Exists(parentDir)
+                    let requiredBytes =
+                        config.MinDiskGb * 1024L * 1024L * 1024L
 
-                    if not canCreateDirectory then
-                        let parentDir =
-                            Path.GetDirectoryName(outputPath)
-
-                        return
-                            Error(
-                                FileSystemError(
-                                    config.OutputDirectory,
-                                    sprintf
-                                        "Parent directory does not exist: %s"
-                                        (if String.IsNullOrEmpty(parentDir) then
-                                             "<none>"
-                                         else
-                                             parentDir),
-                                    None
-                                )
-                            )
+                    if availableBytes < requiredBytes then
+                        return Error(DiskSpaceError(requiredBytes, availableBytes))
                     else
-                        let drive = DriveInfo(root)
+                        Log.info (sprintf "Disk space OK: %s available on %s" (Utils.formatBytes availableBytes) root)
 
-                        let availableBytes =
-                            drive.AvailableFreeSpace
-
-                        let requiredBytes =
-                            config.MinDiskGb * 1024L * 1024L * 1024L
-
-                        if availableBytes < requiredBytes then
-                            return Error(DiskSpaceError(requiredBytes, availableBytes))
-                        else
-                            Log.info (
-                                sprintf "Disk space OK: %s available on %s" (Utils.formatBytes availableBytes) root
-                            )
-
-                            return Ok()
+                        return Ok()
             with ex ->
                 return
                     Error(
@@ -342,6 +312,10 @@ module Preflight =
         }
 
     /// Creates output directory if it doesn't exist
+    /// NOTE: This is called even though Configuration.validateOutputDirectory already created the directory.
+    /// This redundancy is intentional, it is to ensure the directory exists
+    /// even if the directory was deleted between configuration and export.
+    /// Directory.CreateDirectory is idempotent, so this is safe.
     let initializeFileSystem (config: ExportConfig) =
         async {
             try

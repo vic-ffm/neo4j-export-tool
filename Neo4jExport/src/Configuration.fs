@@ -47,10 +47,6 @@ module Configuration =
             | "0" -> Ok false
             | _ -> Error(sprintf "%s must be a valid boolean (true/false, yes/no, 1/0) (got: '%s')" name value)
 
-    let private getOkValue =
-        function
-        | Ok value -> value
-        | Error _ -> failwith "Internal error: attempted to extract Ok value from Error result"
 
     let private appErrorToString =
         function
@@ -87,6 +83,9 @@ module Configuration =
             Result.Error(sprintf "Invalid URI: %s" ex.Message)
 
     let private validateOutputDirectory path =
+        // IMPORTANT: This function intentionally creates the directory during configuration validation.
+        // This is a fail-fast design decision to ensure we catch invalid paths or permission issues
+        // BEFORE establishing expensive database connections.
         match Security.validatePathSyntax path with
         | Result.Error e -> Result.Error e
         | Result.Ok validPath ->
@@ -263,119 +262,167 @@ module Configuration =
                     Env.MAX_LABELS_IN_PATH_COMPACT
                     (Utils.getEnvVar Env.MAX_LABELS_IN_PATH_COMPACT (string Defaults.MaxLabelsInPathCompact))
 
-            let allValidationResults =
-                [ uriResult
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  outputResult
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError appErrorToString
-                  minDiskGb
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  maxMemoryMb
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  skipSchema
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  maxRetries
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  retryDelayMs
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  maxRetryDelayMs
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  queryTimeout
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  enableDebug
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  validateJson
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  allowInsecure
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  batchSize
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  jsonBufferSizeKb
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  maxPathLength
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  pathFullModeLimit
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  pathCompactModeLimit
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  pathPropertyDepth
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  maxNestedDepth
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  nestedShallowModeDepth
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  nestedReferenceModeDepth
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  maxCollectionItems
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  maxLabelsPerNode
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  maxLabelsInReferenceMode
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id
-                  maxLabelsInPathCompact
-                  |> Result.map (fun _ -> ())
-                  |> Result.mapError id ]
-
-            let errors =
-                allValidationResults
-                |> List.choose (function
-                    | Error e -> Some e
-                    | Ok _ -> None)
-
-            match errors with
-            | [] ->
+            // Pattern match on all validation results to extract values safely
+            match
+                uriResult,
+                outputResult,
+                minDiskGb,
+                maxMemoryMb,
+                skipSchema,
+                maxRetries,
+                retryDelayMs,
+                maxRetryDelayMs,
+                queryTimeout,
+                enableDebug,
+                validateJson,
+                allowInsecure,
+                batchSize,
+                jsonBufferSizeKb,
+                maxPathLength,
+                pathFullModeLimit,
+                pathCompactModeLimit,
+                pathPropertyDepth,
+                maxNestedDepth,
+                nestedShallowModeDepth,
+                nestedReferenceModeDepth,
+                maxCollectionItems,
+                maxLabelsPerNode,
+                maxLabelsInReferenceMode,
+                maxLabelsInPathCompact
+            with
+            | Ok uri,
+              Ok output,
+              Ok diskGb,
+              Ok memMb,
+              Ok skipSch,
+              Ok maxRet,
+              Ok retDelay,
+              Ok maxRetDelay,
+              Ok queryTo,
+              Ok debug,
+              Ok valJson,
+              Ok insecure,
+              Ok batch,
+              Ok jsonBuf,
+              Ok pathLen,
+              Ok pathFull,
+              Ok pathCompact,
+              Ok pathDepth,
+              Ok nestDepth,
+              Ok nestShallow,
+              Ok nestRef,
+              Ok collItems,
+              Ok labelsNode,
+              Ok labelsRef,
+              Ok labelsCompact ->
                 Result.Ok
-                    { Uri = getOkValue uriResult
+                    { Uri = uri
                       User = Utils.getEnvVar Env.User Defaults.User
                       Password = Utils.getEnvVar Env.Password Defaults.Password
-                      OutputDirectory = getOkValue outputResult
-                      MinDiskGb = getOkValue minDiskGb
-                      MaxMemoryMb = getOkValue maxMemoryMb
-                      SkipSchemaCollection = getOkValue skipSchema
-                      MaxRetries = getOkValue maxRetries
-                      RetryDelayMs = getOkValue retryDelayMs
-                      MaxRetryDelayMs = getOkValue maxRetryDelayMs
-                      QueryTimeoutSeconds = getOkValue queryTimeout
-                      EnableDebugLogging = getOkValue enableDebug
-                      ValidateJsonOutput = getOkValue validateJson
-                      AllowInsecure = getOkValue allowInsecure
-                      BatchSize = getOkValue batchSize
-                      JsonBufferSizeKb = getOkValue jsonBufferSizeKb
-                      MaxPathLength = getOkValue maxPathLength
-                      PathFullModeLimit = getOkValue pathFullModeLimit
-                      PathCompactModeLimit = getOkValue pathCompactModeLimit
-                      PathPropertyDepth = getOkValue pathPropertyDepth
-                      MaxNestedDepth = getOkValue maxNestedDepth
-                      NestedShallowModeDepth = getOkValue nestedShallowModeDepth
-                      NestedReferenceModeDepth = getOkValue nestedReferenceModeDepth
-                      MaxCollectionItems = getOkValue maxCollectionItems
-                      MaxLabelsPerNode = getOkValue maxLabelsPerNode
-                      MaxLabelsInReferenceMode = getOkValue maxLabelsInReferenceMode
-                      MaxLabelsInPathCompact = getOkValue maxLabelsInPathCompact }
-            | errors -> Result.Error(ConfigError(String.concat "; " errors))
+                      OutputDirectory = output
+                      MinDiskGb = diskGb
+                      MaxMemoryMb = memMb
+                      SkipSchemaCollection = skipSch
+                      MaxRetries = maxRet
+                      RetryDelayMs = retDelay
+                      MaxRetryDelayMs = maxRetDelay
+                      QueryTimeoutSeconds = queryTo
+                      EnableDebugLogging = debug
+                      ValidateJsonOutput = valJson
+                      AllowInsecure = insecure
+                      BatchSize = batch
+                      JsonBufferSizeKb = jsonBuf
+                      MaxPathLength = pathLen
+                      PathFullModeLimit = pathFull
+                      PathCompactModeLimit = pathCompact
+                      PathPropertyDepth = pathDepth
+                      MaxNestedDepth = nestDepth
+                      NestedShallowModeDepth = nestShallow
+                      NestedReferenceModeDepth = nestRef
+                      MaxCollectionItems = collItems
+                      MaxLabelsPerNode = labelsNode
+                      MaxLabelsInReferenceMode = labelsRef
+                      MaxLabelsInPathCompact = labelsCompact }
+            | _ ->
+                // Collect all errors from the Results
+                let errors =
+                    [ match uriResult with
+                      | Error e -> Some e
+                      | _ -> None
+                      match outputResult with
+                      | Error e -> Some(appErrorToString e)
+                      | _ -> None
+                      match minDiskGb with
+                      | Error e -> Some e
+                      | _ -> None
+                      match maxMemoryMb with
+                      | Error e -> Some e
+                      | _ -> None
+                      match skipSchema with
+                      | Error e -> Some e
+                      | _ -> None
+                      match maxRetries with
+                      | Error e -> Some e
+                      | _ -> None
+                      match retryDelayMs with
+                      | Error e -> Some e
+                      | _ -> None
+                      match maxRetryDelayMs with
+                      | Error e -> Some e
+                      | _ -> None
+                      match queryTimeout with
+                      | Error e -> Some e
+                      | _ -> None
+                      match enableDebug with
+                      | Error e -> Some e
+                      | _ -> None
+                      match validateJson with
+                      | Error e -> Some e
+                      | _ -> None
+                      match allowInsecure with
+                      | Error e -> Some e
+                      | _ -> None
+                      match batchSize with
+                      | Error e -> Some e
+                      | _ -> None
+                      match jsonBufferSizeKb with
+                      | Error e -> Some e
+                      | _ -> None
+                      match maxPathLength with
+                      | Error e -> Some e
+                      | _ -> None
+                      match pathFullModeLimit with
+                      | Error e -> Some e
+                      | _ -> None
+                      match pathCompactModeLimit with
+                      | Error e -> Some e
+                      | _ -> None
+                      match pathPropertyDepth with
+                      | Error e -> Some e
+                      | _ -> None
+                      match maxNestedDepth with
+                      | Error e -> Some e
+                      | _ -> None
+                      match nestedShallowModeDepth with
+                      | Error e -> Some e
+                      | _ -> None
+                      match nestedReferenceModeDepth with
+                      | Error e -> Some e
+                      | _ -> None
+                      match maxCollectionItems with
+                      | Error e -> Some e
+                      | _ -> None
+                      match maxLabelsPerNode with
+                      | Error e -> Some e
+                      | _ -> None
+                      match maxLabelsInReferenceMode with
+                      | Error e -> Some e
+                      | _ -> None
+                      match maxLabelsInPathCompact with
+                      | Error e -> Some e
+                      | _ -> None ]
+                    |> List.choose id
+
+                Result.Error(ConfigError(String.concat "; " errors))
         with ex ->
             Result.Error(ConfigError(sprintf "Invalid configuration: %s" ex.Message))

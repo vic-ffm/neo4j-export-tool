@@ -49,11 +49,9 @@ let exportNodesUnified
     async {
         Log.info "Exporting nodes with label statistics..."
 
-        let initialLabelTracker =
-            LabelStatsTracker.create ()
-
-        let lineStateWithNodeStart =
-            lineState |> LineTracking.recordTypeStart "node"
+        let initialState: NodeExportState =
+            { LineState = lineState |> LineTracking.recordTypeStart "node"
+              LabelTracker = LabelStatsTracker.create () }
 
         let processor =
             { Query = "MATCH (n) RETURN n, labels(n) as labels SKIP $skip LIMIT $limit"
@@ -61,8 +59,36 @@ let exportNodesUnified
               ProcessRecord = processNodeRecord
               EntityName = "Nodes" }
 
-        let mutable currentLineState =
-            lineStateWithNodeStart
+        let nodeHandler (state: NodeExportState) (record: IRecord) (bytesWritten: int64) : NodeExportState =
+            errorTracker.IncrementLine()
+            
+            let newLineState = state.LineState |> LineTracking.incrementLine
+
+            let labels =
+                try
+                    record.["labels"].As<List<obj>>()
+                    |> Seq.map (fun o -> o.ToString())
+                    |> Seq.toList
+                with _ ->
+                    []
+
+            let bytesPerLabel =
+                if List.isEmpty labels then
+                    bytesWritten
+                else
+                    bytesWritten / int64 labels.Length
+
+            let newLabelTracker =
+                labels
+                |> List.fold
+                    (fun tracker label ->
+                        tracker
+                        |> LabelStatsTracker.startLabel label
+                        |> LabelStatsTracker.updateLabel label 1L bytesPerLabel)
+                    state.LabelTracker
+
+            { LineState = newLineState
+              LabelTracker = newLabelTracker }
 
         match!
             processBatchedQuery
@@ -74,38 +100,11 @@ let exportNodesUnified
                 stats
                 exportId
                 errorTracker
-                initialLabelTracker
-                (fun tracker record bytesWritten ->
-                    errorTracker.IncrementLine()
-                    currentLineState <- currentLineState |> LineTracking.incrementLine
-
-                    let labels =
-                        try
-                            record.["labels"].As<List<obj>>()
-                            |> Seq.map (fun o -> o.ToString())
-                            |> Seq.toList
-                        with _ ->
-                            []
-
-                    let bytesPerLabel =
-                        if List.isEmpty labels then
-                            bytesWritten
-                        else
-                            bytesWritten / int64 labels.Length
-
-                    let newTracker =
-                        labels
-                        |> List.fold
-                            (fun tracker label ->
-                                tracker
-                                |> LabelStatsTracker.startLabel label
-                                |> LabelStatsTracker.updateLabel label 1L bytesPerLabel)
-                            tracker
-
-                    newTracker)
+                initialState
+                nodeHandler
         with
         | Error e -> return Error e
-        | Ok(finalStats, finalLabelTracker) -> return Ok(finalStats, finalLabelTracker, currentLineState)
+        | Ok(finalStats, finalState) -> return Ok(finalStats, finalState.LabelTracker, finalState.LineState)
     }
 
 let exportRelationships
@@ -121,9 +120,8 @@ let exportRelationships
     async {
         Log.info "Exporting relationships..."
 
-        let lineStateWithRelStart =
-            lineState
-            |> LineTracking.recordTypeStart "relationship"
+        let initialState: RelationshipExportState =
+            lineState |> LineTracking.recordTypeStart "relationship"
 
         let processor =
             { Query = "MATCH (s)-[r]->(t) RETURN r, s, t SKIP $skip LIMIT $limit"
@@ -131,13 +129,9 @@ let exportRelationships
               ProcessRecord = processRelationshipRecord
               EntityName = "Relationships" }
 
-        let mutable currentLineState =
-            lineStateWithRelStart
-
-        let relationshipHandler () (record: IRecord) (bytesWritten: int64) =
+        let relationshipHandler (state: RelationshipExportState) (record: IRecord) (bytesWritten: int64) : RelationshipExportState =
             errorTracker.IncrementLine()
-            currentLineState <- currentLineState |> LineTracking.incrementLine
-            ()
+            state |> LineTracking.incrementLine
 
         match!
             processBatchedQuery
@@ -149,11 +143,11 @@ let exportRelationships
                 stats
                 exportId
                 errorTracker
-                ()
+                initialState
                 relationshipHandler
         with
         | Error e -> return Error e
-        | Ok(finalStats, _) -> return Ok(finalStats, currentLineState)
+        | Ok(finalStats, finalState) -> return Ok(finalStats, finalState)
     }
 
 /// Export error and warning records from the error tracker

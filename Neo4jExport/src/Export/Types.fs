@@ -62,6 +62,14 @@ type BatchProcessor =
 /// Record handler that can maintain state
 type RecordHandler<'state> = 'state -> IRecord -> int64 -> 'state
 
+/// Combined state for node export that tracks both lines and labels
+type NodeExportState =
+    { LineState: LineTrackingState
+      LabelTracker: LabelStatsTracker.Tracker }
+
+/// State for relationship export that only tracks lines
+type RelationshipExportState = LineTrackingState
+
 let (|TemporalType|_|) (value: obj) =
     match value with
     | :? LocalDate as ld -> Some(ld.ToString())

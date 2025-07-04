@@ -28,9 +28,14 @@ open System.Collections.Generic
 open System.Text.Json
 open Neo4j.Driver
 
-/// Helper functions for working with JsonValue type
+/// Helper functions for working with JsonValue type - FOR METADATA COLLECTION ONLY!
+/// WARNING: These functions are designed for metadata serialization where JSON fidelity
+/// matters more than .NET type fidelity. All numbers are converted to decimal.
+/// DO NOT use these for actual Neo4j data export - use Utf8JsonWriter directly instead.
 module JsonHelpers =
-    /// Convert arbitrary objects to type-safe JsonValue with proper error handling
+    /// Convert arbitrary objects to JsonValue for METADATA ONLY.
+    /// NOTE: All numeric types are converted to decimal for JSON compatibility.
+    /// This intentionally loses .NET type information but preserves JSON numeric fidelity.
     let rec toJsonValue (obj: obj) : Result<JsonValue, string> =
         match obj with
         | null -> Ok JNull
@@ -90,12 +95,14 @@ module JsonHelpers =
             |> Result.map (List.rev >> JArray)
         | _ -> Error(sprintf "Unsupported type for JSON conversion: %s" (obj.GetType().FullName))
 
-    /// Add a convenience function for backward compatibility
-    /// WARNING: This will throw an exception for unsupported types
-    let toJsonValueUnsafe (obj: obj) : JsonValue =
+    /// Convert arbitrary objects to type-safe JsonValue with a default fallback.
+    /// This avoids exceptions for non-critical conversions while providing error visibility.
+    let toJsonValueWithDefault (defaultValue: JsonValue) (logWarning: string -> unit) (obj: obj) : JsonValue =
         match toJsonValue obj with
         | Ok value -> value
-        | Error msg -> failwith (sprintf "JSON conversion error: %s" msg)
+        | Error msg ->
+            logWarning (sprintf "JSON conversion failed for type '%s', using default value. Error: %s" (obj.GetType().FullName) msg)
+            defaultValue
 
     /// Extract string value from JsonValue - Result version
     let tryGetString (value: JsonValue) : Result<string, string> =
@@ -114,7 +121,9 @@ module JsonHelpers =
                 Error "Cannot convert number to int64"
         | _ -> Error "Value is not a number"
 
-    /// Convert JsonValue back to obj for JSON serialization
+    /// Convert JsonValue back to obj for JSON serialization - FOR METADATA ONLY!
+    /// WARNING: All JNumber values return as decimal, regardless of original type.
+    /// This is intentional for metadata serialization but unsuitable for type-safe data export.
     let rec fromJsonValue (value: JsonValue) : obj =
         match value with
         | JNull -> null
