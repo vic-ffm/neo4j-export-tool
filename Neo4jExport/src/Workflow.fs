@@ -31,36 +31,25 @@ open ErrorTracking
 /// Main workflow orchestration for the export process
 module Workflow =
     let handleError (error: AppError) =
-        let exitCode, message =
-            match error with
-            | ConfigError msg -> 6, sprintf "Configuration Error: %s" msg
-            | ConnectionError(msg, _) -> 2, sprintf "Connection Error: %s" msg
-            | AuthenticationError msg -> 6, sprintf "Authentication Error: %s" msg
-            | QueryError(query, msg, _) ->
-                7, sprintf "Query Error: %s\nQuery: %s" msg (Security.sanitizeForLogging query 200)
-            | DataCorruptionError(line, msg, sample) ->
-                5,
-                sprintf
-                    "Data Corruption at line %d: %s%s"
-                    line
-                    msg
-                    (sample
-                     |> Option.map (sprintf "\nSample: %s")
-                     |> Option.defaultValue "")
-            | DiskSpaceError(required, available) ->
-                3,
-                sprintf
-                    "Insufficient Disk Space: Need %s, have %s"
-                    (Utils.formatBytes required)
-                    (Utils.formatBytes available)
-            | MemoryError msg -> 3, sprintf "Memory Error: %s" msg
-            | ExportError(msg, _) -> 5, sprintf "Export Error: %s" msg
-            | FileSystemError(path, msg, _) -> 3, sprintf "File System Error: %s\nPath: %s" msg path
-            | SecurityError msg -> 6, sprintf "Security Error: %s" msg
-            | TimeoutError(op, duration) -> 5, sprintf "Timeout Error: %s timed out after %O" op duration
+        let message =
+            ErrorAccumulation.appErrorToString error
 
         Log.fatal message
-        exitCode
+
+        // Return appropriate exit code based on error type
+        match error with
+        | ConfigError _ -> 6
+        | ConnectionError _ -> 2
+        | AuthenticationError _ -> 6
+        | QueryError _ -> 7
+        | DataCorruptionError _ -> 5
+        | DiskSpaceError _ -> 3
+        | MemoryError _ -> 3
+        | ExportError _ -> 5
+        | FileSystemError _ -> 3
+        | SecurityError _ -> 6
+        | TimeoutError _ -> 5
+        | AggregateError _ -> 6
 
     /// Performs export with efficient single-pass data writing and statistics collection
     let private performExport context session config metadata errorTracker : Async<Result<unit, AppError>> =

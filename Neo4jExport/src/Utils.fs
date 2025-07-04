@@ -42,10 +42,20 @@ module Utils =
                 return BitConverter.ToString(hash).Replace("-", "").ToLower()
             with
             | :? IOException as ex ->
-                Log.warn (sprintf "Could not compute script checksum due to I/O error: %s" ex.Message)
+                Log.warn (
+                    sprintf
+                        "Could not compute script checksum due to I/O error: %s"
+                        (ErrorAccumulation.exceptionToString ex)
+                )
+
                 return "unknown"
             | :? UnauthorizedAccessException as ex ->
-                Log.warn (sprintf "Could not compute script checksum due to permissions error: %s" ex.Message)
+                Log.warn (
+                    sprintf
+                        "Could not compute script checksum due to permissions error: %s"
+                        (ErrorAccumulation.exceptionToString ex)
+                )
+
                 return "unknown"
             | :? OperationCanceledException ->
                 Log.debug "Script checksum computation was cancelled"
@@ -53,9 +63,8 @@ module Utils =
             | ex ->
                 Log.error (
                     sprintf
-                        "An unexpected error occurred while computing script checksum: %s (%s)"
-                        ex.Message
-                        (ex.GetType().Name)
+                        "An unexpected error occurred while computing script checksum: %s"
+                        (ErrorAccumulation.exceptionToString ex)
                 )
 
                 return "unknown"
@@ -91,13 +100,31 @@ module Utils =
             Result.Ok()
         with
         | :? ArgumentException as ex ->
-            Result.Error(FileSystemError(path, sprintf "Invalid path format: %s" ex.Message, Some ex))
+            Result.Error(
+                FileSystemError(
+                    path,
+                    sprintf "Invalid path format: %s" (ErrorAccumulation.exceptionToString ex),
+                    Some ex
+                )
+            )
         | :? PathTooLongException as ex -> Result.Error(FileSystemError(path, "Path exceeds system limits", Some ex))
         | :? DirectoryNotFoundException as ex ->
             Result.Error(FileSystemError(path, "Parent directory not found", Some ex))
         | :? IOException as ex ->
-            Result.Error(FileSystemError(path, sprintf "I/O error creating directory: %s" ex.Message, Some ex))
+            Result.Error(
+                FileSystemError(
+                    path,
+                    sprintf "I/O error creating directory: %s" (ErrorAccumulation.exceptionToString ex),
+                    Some ex
+                )
+            )
         | :? UnauthorizedAccessException as ex ->
             Result.Error(FileSystemError(path, "Insufficient permissions to create directory", Some ex))
         | :? NotSupportedException as ex ->
-            Result.Error(FileSystemError(path, sprintf "Path format not supported: %s" ex.Message, Some ex))
+            Result.Error(
+                FileSystemError(
+                    path,
+                    sprintf "Path format not supported: %s" (ErrorAccumulation.exceptionToString ex),
+                    Some ex
+                )
+            )

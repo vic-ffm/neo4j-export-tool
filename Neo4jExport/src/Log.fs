@@ -91,11 +91,11 @@ module Log =
 
     /// Logs an exception with optional stack trace based on current log level
     let logException (ex: exn) =
-        error (sprintf "Exception: %s" ex.Message)
+        error (sprintf "Exception: %s" (ErrorAccumulation.exceptionToString ex))
 
         if shouldLog LogLevel.Debug then
             error (sprintf "StackTrace: %s" ex.StackTrace)
 
             match ex.InnerException with
             | null -> ()
-            | inner -> error (sprintf "InnerException: %s" inner.Message)
+            | inner -> error (sprintf "InnerException: %s" (ErrorAccumulation.exceptionToString inner))

@@ -55,7 +55,7 @@ module Cleanup =
                     with _ ->
                         "unknown"
 
-                Log.warn (sprintf "Failed to terminate process %s: %s" procId ex.Message)
+                Log.warn (sprintf "Failed to terminate process %s: %s" procId (ErrorAccumulation.exceptionToString ex))
 
         for file in context.TempFiles do
             try
@@ -63,6 +63,6 @@ module Cleanup =
                     File.Delete(file)
                     Log.debug (sprintf "Deleted temp file: %s" file)
             with ex ->
-                Log.warn (sprintf "Failed to delete temp file %s: %s" file ex.Message)
+                Log.warn (sprintf "Failed to delete temp file %s: %s" file (ErrorAccumulation.exceptionToString ex))
 
         Log.info "Cleanup completed"

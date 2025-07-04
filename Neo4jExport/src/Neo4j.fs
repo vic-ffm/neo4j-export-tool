@@ -110,6 +110,22 @@ module Neo4j =
         let next minValue maxValue =
             lock randomLock (fun () -> random.Next(minValue, maxValue))
 
+    /// Retry outcome types for deduplication
+    type RetryOutcome<'T> =
+        | Success of 'T
+        | FailedAfterRetries of RetryInfo
+
+    and RetryInfo =
+        { FirstException: exn
+          RetryCount: int
+          TotalDelayMs: int
+          LastException: exn }
+
+    type RetryState =
+        { Attempt: int
+          FirstException: exn option
+          TotalDelayMs: int }
+
     let private executeWithResilience<'T> (breaker: CircuitBreaker) (config: ExportConfig) (operation: Async<'T>) =
         async {
             let checkCircuitBreaker () =
@@ -159,42 +175,73 @@ module Neo4j =
                 | :? TimeoutException -> true
                 | _ -> false
 
-            let rec attemptWithRetry retryCount =
+            let calculateDelay attempt =
+                let exponentialDelay =
+                    config.RetryDelayMs
+                    * int (Math.Pow(2.0, float attempt))
+
+                let delay =
+                    min config.MaxRetryDelayMs exponentialDelay
+
+                let jitter = RandomGen.next 0 (delay / 4)
+                delay + jitter
+
+            let rec attemptWithRetry (state: RetryState) =
                 async {
                     try
                         checkCircuitBreaker ()
                         let! result = operation
                         recordSuccess ()
-                        return result
+                        return Success result
                     with
-                    | ex when isRetryable ex && retryCount < config.MaxRetries ->
-                        let delay =
-                            let exponentialDelay =
-                                config.RetryDelayMs
-                                * int (Math.Pow(2.0, float retryCount))
+                    | ex when
+                        isRetryable ex
+                        && state.Attempt < config.MaxRetries
+                        ->
+                        // NO Log.warn here - accumulate instead
+                        let delay = calculateDelay state.Attempt
+                        do! Async.Sleep delay
 
-                            min config.MaxRetryDelayMs exponentialDelay
+                        let newState =
+                            { Attempt = state.Attempt + 1
+                              FirstException = state.FirstException |> Option.orElse (Some ex)
+                              TotalDelayMs = state.TotalDelayMs + delay }
 
-                        let jitter = RandomGen.next 0 (delay / 4)
-                        let totalDelay = delay + jitter
-
-                        Log.warn (
-                            sprintf
-                                "Retry %d/%d after %dms: %s"
-                                (retryCount + 1)
-                                config.MaxRetries
-                                totalDelay
-                                ex.Message
-                        )
-
-                        do! Async.Sleep totalDelay
-                        return! attemptWithRetry (retryCount + 1)
+                        return! attemptWithRetry newState
                     | ex ->
                         recordFailure ()
-                        return raise ex
+
+                        match state.FirstException with
+                        | Some firstEx ->
+                            return
+                                FailedAfterRetries
+                                    { FirstException = firstEx
+                                      RetryCount = state.Attempt
+                                      TotalDelayMs = state.TotalDelayMs
+                                      LastException = ex }
+                        | None -> return raise ex
                 }
 
-            return! attemptWithRetry 0
+            let! retryResult =
+                attemptWithRetry
+                    { Attempt = 0
+                      FirstException = None
+                      TotalDelayMs = 0 }
+
+            match retryResult with
+            | Success result -> return result
+            | FailedAfterRetries info ->
+                // Single consolidated log entry
+                Log.error (
+                    sprintf
+                        "Operation failed after %d retries over %dms. First error: %s. Last error: %s"
+                        info.RetryCount
+                        info.TotalDelayMs
+                        (ErrorAccumulation.exceptionToString info.FirstException)
+                        (ErrorAccumulation.exceptionToString info.LastException)
+                )
+
+                return raise info.LastException
         }
 
     /// Executes a Neo4j query with streaming results
@@ -242,7 +289,13 @@ module Neo4j =
                 return Ok result
             with
             | :? AuthenticationException as ex ->
-                return Error(ConnectionError(sprintf "Authentication failed: %s" ex.Message, Some ex))
+                return
+                    Error(
+                        ConnectionError(
+                            sprintf "Authentication failed: %s" (ErrorAccumulation.exceptionToString ex),
+                            Some ex
+                        )
+                    )
             | :? ClientException as ex when ex.Message.Contains("Neo.ClientError.Security") ->
                 return Error(ConnectionError("Authentication failed: Invalid credentials", Some ex))
             | :? ClientException as ex when ex.Message.Contains("Neo.ClientError.Procedure.ProcedureNotFound") ->
@@ -256,7 +309,7 @@ module Neo4j =
                             Some ex
                         )
                     )
-            | ex -> return Error(QueryError(query, ex.Message, Some ex))
+            | ex -> return Error(QueryError(query, ErrorAccumulation.exceptionToString ex, Some ex))
         }
 
     /// Executes a query and returns results as a list. Use only for small result sets.
@@ -300,18 +353,12 @@ module Neo4j =
                         return Ok(results |> List.ofSeq)
                 | Error e -> return Error e
             | Error e1, Error e2 ->
-                let combinedMessage =
-                    match e1, e2 with
-                    | QueryError(_, msg1, _), QueryError(_, msg2, _) ->
-                        sprintf "Multiple query errors: %s; %s" msg1 msg2
-                    | QueryError(_, msg1, _), ConfigError msg2
-                    | ConfigError msg1, QueryError(_, msg2, _) -> sprintf "Query and config errors: %s; %s" msg1 msg2
-                    | ConfigError msg1, ConfigError msg2 -> sprintf "Multiple config errors: %s; %s" msg1 msg2
-                    | QueryError(_, msg1, _), err2 -> sprintf "Multiple errors: %s; %s" msg1 (err2.ToString())
-                    | err1, QueryError(_, msg2, _) -> sprintf "Multiple errors: %s; %s" (err1.ToString()) msg2
-                    | err1, err2 -> sprintf "Multiple errors: %s; %s" (err1.ToString()) (err2.ToString())
+                let combinedError =
+                    ErrorAccumulation.singleton e1
+                    |> ErrorAccumulation.cons e2
+                    |> ErrorAccumulation.toConfigError
 
-                return Error(ConfigError combinedMessage)
+                return Error combinedError
             | Error e, _
             | _, Error e -> return Error e
         }

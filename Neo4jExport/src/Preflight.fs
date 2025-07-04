@@ -73,7 +73,7 @@ module Preflight =
                 Log.warn "MemAvailable not found in /proc/meminfo"
                 Constants.Defaults.ConservativeMemoryFallback
         with ex ->
-            Log.warn (sprintf "Failed to parse /proc/meminfo: %s" ex.Message)
+            Log.warn (sprintf "Failed to parse /proc/meminfo: %s" (ErrorAccumulation.exceptionToString ex))
             Constants.Defaults.ConservativeMemoryFallback
 
     let private getPlatformSpecificMemory () =
@@ -95,7 +95,7 @@ module Preflight =
                 Log.warn "Platform-specific memory detection not available, using conservative estimate"
                 Constants.Defaults.ConservativeMemoryFallback
         with ex ->
-            Log.warn (sprintf "Platform detection failed: %s" ex.Message)
+            Log.warn (sprintf "Platform detection failed: %s" (ErrorAccumulation.exceptionToString ex))
             Constants.Defaults.ConservativeMemoryFallback
 
     /// Gets available system memory using GC info or platform-specific methods
@@ -111,10 +111,13 @@ module Preflight =
             availableMemory
         with
         | :? NotSupportedException as ex ->
-            Log.warn (sprintf "GC memory info not supported on this platform: %s" ex.Message)
+            Log.warn (
+                sprintf "GC memory info not supported on this platform: %s" (ErrorAccumulation.exceptionToString ex)
+            )
+
             getPlatformSpecificMemory ()
         | ex ->
-            Log.warn (sprintf "Failed to get system memory info: %s" ex.Message)
+            Log.warn (sprintf "Failed to get system memory info: %s" (ErrorAccumulation.exceptionToString ex))
             Constants.Defaults.ConservativeMemoryFallback
 
     let private defaultMemoryEstimationConfig =
@@ -212,6 +215,8 @@ module Preflight =
                         config.MinDiskGb * 1024L * 1024L * 1024L
 
                     if availableBytes < requiredBytes then
+                        // Business logic failure - insufficient disk space prevents export
+                        // Return AppError so caller (Workflow.fs) can handle appropriately
                         return Error(DiskSpaceError(requiredBytes, availableBytes))
                     else
                         Log.info (sprintf "Disk space OK: %s available on %s" (Utils.formatBytes availableBytes) root)
@@ -222,7 +227,7 @@ module Preflight =
                     Error(
                         FileSystemError(
                             config.OutputDirectory,
-                            sprintf "Failed to check disk space: %s" ex.Message,
+                            sprintf "Failed to check disk space: %s" (ErrorAccumulation.exceptionToString ex),
                             Some ex
                         )
                     )
@@ -285,8 +290,14 @@ module Preflight =
                         Log.info (sprintf "Memory OK: %s available for export" (Utils.formatBytes availableMemory))
                         return Ok()
             with ex ->
-                Log.error (sprintf "Failed to check memory: %s" ex.Message)
-                return Error(MemoryError(sprintf "Failed to perform memory check: %s" ex.Message))
+                Log.error (sprintf "Failed to check memory: %s" (ErrorAccumulation.exceptionToString ex))
+
+                return
+                    Error(
+                        MemoryError(
+                            sprintf "Failed to perform memory check: %s" (ErrorAccumulation.exceptionToString ex)
+                        )
+                    )
         }
 
     let private checkDatabaseConnection (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) =
@@ -331,7 +342,7 @@ module Preflight =
                     Error(
                         FileSystemError(
                             config.OutputDirectory,
-                            sprintf "Failed to create output directory: %s" ex.Message,
+                            sprintf "Failed to create output directory: %s" (ErrorAccumulation.exceptionToString ex),
                             Some ex
                         )
                     )

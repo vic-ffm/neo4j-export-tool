@@ -32,6 +32,7 @@ open Neo4jExport
 open Neo4jExport.ExportTypes
 open Neo4jExport.ExportUtils
 open Neo4jExport.SerializationEngine
+open Neo4jExport.ErrorDeduplication
 open ErrorTracking
 
 /// Common progress reporting logic
@@ -120,8 +121,8 @@ let private incrementStats (stats: ExportProgress) =
     { stats with
         RecordsProcessed = stats.RecordsProcessed + 1L }
 
-/// Common node processing logic
-let processNodeRecord (buffer: ArrayBufferWriter<byte>) record exportId stats errorTracker config =
+/// Node processing logic with error deduplication
+let processNodeRecord errorAccumulator (buffer: ArrayBufferWriter<byte>) record exportId stats errorTracker config =
     let ctx =
         SerializationContext.createWriterContext config errorTracker exportId
 
@@ -135,12 +136,13 @@ let processNodeRecord (buffer: ArrayBufferWriter<byte>) record exportId stats er
     | Error ex ->
         let elementId = ""
 
-        trackSerializationError
-            ctx.ErrorTracker
-            (sprintf "Node serialization failed: %s" ex.Message)
+        // Use deduplication instead of direct tracking
+        trackSerializationErrorDedup
+            errorAccumulator
+            ex
             elementId
             "node"
-            (ex.GetType().Name)
+            "SerializationError"
 
         writer.WriteStartObject()
         writer.WriteString("type", "node")
@@ -159,8 +161,8 @@ let processNodeRecord (buffer: ArrayBufferWriter<byte>) record exportId stats er
 
     dataBytes, incrementStats stats
 
-/// Common relationship processing logic
-let processRelationshipRecord (buffer: ArrayBufferWriter<byte>) record exportId stats errorTracker config =
+/// Relationship processing logic with error deduplication
+let processRelationshipRecord errorAccumulator (buffer: ArrayBufferWriter<byte>) record exportId stats errorTracker config =
     let ctx =
         SerializationContext.createWriterContext config errorTracker exportId
 
@@ -185,12 +187,13 @@ let processRelationshipRecord (buffer: ArrayBufferWriter<byte>) record exportId 
             writeRelationship writer rel ids ctx
         | Error ex ->
             // Phase 4: Node casting failed, but we already have IDs from the relationship
-            trackSerializationError
-                ctx.ErrorTracker
-                (sprintf "Failed to cast nodes for relationship serialization: %s" ex.Message)
+            // Use deduplication instead of direct tracking
+            trackSerializationErrorDedup
+                errorAccumulator
+                ex
                 relId
                 "relationship"
-                (ex.GetType().Name)
+                "SerializationError"
 
             // Write error record with the IDs we successfully extracted
             writer.WriteStartObject()
@@ -210,12 +213,13 @@ let processRelationshipRecord (buffer: ArrayBufferWriter<byte>) record exportId 
             writer.WriteString("end_element_id", endId)
             writer.WriteStartObject "properties"
             writer.WriteString("_export_error", "node_cast_failed")
-            writer.WriteString("_error_message", ex.Message)
+            writer.WriteString("_error_message", (ErrorAccumulation.exceptionToString ex))
             writer.WriteEndObject()
             writer.WriteEndObject()
     | _ ->
-        trackSerializationError
-            ctx.ErrorTracker
+        // Use deduplication instead of direct tracking
+        trackSerializationErrorByMessage
+            errorAccumulator
             "Failed to extract relationship or nodes from record"
             ""
             "relationship"
@@ -238,7 +242,7 @@ let processRelationshipRecord (buffer: ArrayBufferWriter<byte>) record exportId 
 
     dataBytes, incrementStats stats
 
-/// Generic batch processing function following functional composition
+/// Generic batch processing function with built-in error deduplication
 let processBatchedQuery<'state>
     (processor: BatchProcessor)
     (context: ApplicationContext)
@@ -284,6 +288,9 @@ let processBatchedQuery<'state>
                 }
             | None -> async { return None }
 
+        // Create error accumulator with expected capacity for unique errors
+        let errorAccumulator = createAccumulator 100
+
         let rec processBatch
             (currentStats: ExportProgress)
             (lastProgress: DateTime)
@@ -310,6 +317,9 @@ let processBatchedQuery<'state>
                     let mutable recordCount = 0
                     let mutable hasMore = true
 
+                    // Clear accumulator at start of each batch
+                    clearAccumulator errorAccumulator
+
                     while hasMore do
                         let! fetchResult = cursor.FetchAsync() |> Async.AwaitTask
 
@@ -319,8 +329,15 @@ let processBatchedQuery<'state>
 
                             buffer.Clear()
 
+                            // Use deduplication-enabled processors
                             let dataBytes, newStats =
-                                processor.ProcessRecord buffer record exportId batchStats errorTracker config
+                                match processor.EntityName with
+                                | "Nodes" -> 
+                                    processNodeRecord errorAccumulator buffer record exportId batchStats errorTracker config
+                                | "Relationships" ->
+                                    processRelationshipRecord errorAccumulator buffer record exportId batchStats errorTracker config
+                                | _ ->
+                                    failwithf "Unsupported entity type: %s" processor.EntityName
 
                             fileStream.Write buffer.WrittenSpan
                             fileStream.Write(newlineBytes, 0, newlineBytes.Length)
@@ -340,6 +357,9 @@ let processBatchedQuery<'state>
                             hasMore <- false
 
                     fileStream.Flush()
+
+                    // Flush accumulated errors at batch boundary
+                    flushErrors errorAccumulator errorTracker (int64 recordCount)
 
                     if recordCount = 0 then
                         return Ok(batchStats, currentHandlerState)

@@ -32,7 +32,7 @@ module SignalHandling =
     let registerHandlers (context: ApplicationContext) : IDisposable option =
         AppDomain.CurrentDomain.UnhandledException.Add(fun args ->
             let ex = args.ExceptionObject :?> Exception
-            Log.fatal (sprintf "Unhandled exception: %s" ex.Message)
+            Log.fatal (sprintf "Unhandled exception: %s" (ErrorAccumulation.exceptionToString ex))
             Log.logException ex)
 
         Console.CancelKeyPress.Add(fun args ->
@@ -95,7 +95,9 @@ module SignalHandling =
                     Log.debug "PosixSignalRegistration types not available"
                     None
             with ex ->
-                Log.debug (sprintf "Could not register SIGTERM handler: %s" ex.Message)
+                // Infrastructure failure - app works without SIGTERM handling
+                // Log for diagnostics but don't create AppError (no caller to handle it)
+                Log.debug (sprintf "Could not register SIGTERM handler: %s" (ErrorAccumulation.exceptionToString ex))
                 None
 
         registerSigtermFallback ()

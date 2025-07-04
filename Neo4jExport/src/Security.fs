@@ -73,4 +73,5 @@ module Security =
             | :? ArgumentNullException
             | :? NotSupportedException
             | :? PathTooLongException
-            | :? System.Security.SecurityException as ex -> Error(SecurityError(sprintf "Invalid path: %s" ex.Message))
+            | :? System.Security.SecurityException as ex ->
+                Error(SecurityError(sprintf "Invalid path: %s" (ErrorAccumulation.exceptionToString ex)))

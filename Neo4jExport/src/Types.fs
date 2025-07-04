@@ -139,6 +139,22 @@ type ExportConfig =
       MaxLabelsInPathCompact: int }
 
 /// All possible application errors
+///
+/// AppError represents BUSINESS LOGIC FAILURES that affect the operation's outcome.
+/// These are errors that:
+/// - Are part of the normal application flow (e.g., invalid config, connection failures)
+/// - Can be handled by callers (retry, use fallback, notify user)
+/// - Prevent the operation from succeeding (e.g., no disk space → can't export)
+///
+/// DO NOT create AppError instances for INFRASTRUCTURE FAILURES such as:
+/// - Signal handler registration failures (app works without SIGTERM handling)
+/// - Logging system failures (app continues without logs)
+/// - Resource disposal errors during shutdown (can't propagate anyway)
+/// - Background monitoring thread failures (main operation unaffected)
+///
+/// Infrastructure failures should use Log.warn/error for diagnostics instead.
+/// The key question: "Does this failure prevent the operation from continuing?"
+/// If yes → AppError. If no → Log message.
 type AppError =
     | ConfigError of message: string
     | ConnectionError of message: string * exn: exn option
@@ -151,6 +167,7 @@ type AppError =
     | FileSystemError of path: string * message: string * exn: exn option
     | SecurityError of message: string
     | TimeoutError of operation: string * duration: TimeSpan
+    | AggregateError of NonEmptyList<AppError>
 
 /// Mutable context for managing application lifecycle and cleanup
 type ApplicationContext =
@@ -164,7 +181,7 @@ type ApplicationContext =
             try
                 this.CancellationTokenSource.Dispose()
             with ex ->
-                eprintfn "[WARN] Failed to dispose CancellationTokenSource: %s" ex.Message
+                eprintfn "[WARN] Failed to dispose CancellationTokenSource: %s: %s" (ex.GetType().Name) ex.Message
 
             // Step 2: Clean up temp files
             for tempFile in this.TempFiles do
@@ -172,7 +189,7 @@ type ApplicationContext =
                     if System.IO.File.Exists(tempFile) then
                         System.IO.File.Delete(tempFile)
                 with ex ->
-                    eprintfn "[WARN] Failed to delete temporary file '%s': %s" tempFile ex.Message
+                    eprintfn "[WARN] Failed to delete temporary file '%s': %s: %s" tempFile (ex.GetType().Name) ex.Message
 
             // Step 3: Clean up processes with safe property access
             for proc in this.ActiveProcesses do
@@ -195,7 +212,7 @@ type ApplicationContext =
 
                         proc.Dispose()
                     with ex ->
-                        eprintfn "[WARN] Failed to terminate/dispose process (PID %d): %s" processId ex.Message
+                        eprintfn "[WARN] Failed to terminate/dispose process (PID %d): %s: %s" processId (ex.GetType().Name) ex.Message
                 else
                     // Process already disposed, try to dispose anyway
                     try

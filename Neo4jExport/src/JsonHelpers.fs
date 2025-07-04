@@ -101,13 +101,7 @@ module JsonHelpers =
         match toJsonValue obj with
         | Ok value -> value
         | Error msg ->
-            logWarning (
-                sprintf
-                    "JSON conversion failed for type '%s', using default value. Error: %s"
-                    (obj.GetType().FullName)
-                    msg
-            )
-
+            logWarning (sprintf "JSON conversion failed for type '%s', using default value. Error: %s" (obj.GetType().FullName) msg)
             defaultValue
 
     /// Extract string value from JsonValue - Result version

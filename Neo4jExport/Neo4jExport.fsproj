@@ -25,11 +25,13 @@
 
   <ItemGroup>
     <!-- Order matters in F# - files are compiled in the order listed -->
+    <Compile Include="src/NonEmptyList.fs" />
     <Compile Include="src/Types.fs" />
     <Compile Include="src/RecordTypes.fs" />
     <Compile Include="src/ErrorTracking.fs" />
     <Compile Include="src/JsonHelpers.fs" />
     <Compile Include="src/Constants.fs" />
+    <Compile Include="src/ErrorAccumulation.fs" />
     <Compile Include="src/AppContext.fs" />
     <Compile Include="src/Log.fs" />
     <Compile Include="src/LabelStatsTracker.fs" />
@@ -54,6 +56,7 @@
     <Compile Include="src/Export/Serialization/GraphElements.fs" />
     <Compile Include="src/Export/Serialization/Path.fs" />
     <Compile Include="src/Export/Serialization/Engine.fs" />
+    <Compile Include="src/Export/ErrorDeduplication.fs" />
     <Compile Include="src/Export/BatchProcessing.fs" />
     <Compile Include="src/Export/Core.fs" />
     <Compile Include="src/Export.fs" />

@@ -24,6 +24,7 @@ namespace Neo4jExport
 
 open System
 open Constants
+open ErrorAccumulation
 
 module Configuration =
     module private SafeParsing =
@@ -47,25 +48,6 @@ module Configuration =
             | "0" -> Ok false
             | _ -> Error(sprintf "%s must be a valid boolean (true/false, yes/no, 1/0) (got: '%s')" name value)
 
-
-    let private appErrorToString =
-        function
-        | ConfigError msg -> msg
-        | SecurityError msg -> msg
-        | FileSystemError(path, msg, _) -> sprintf "%s: %s" path msg
-        | ConnectionError(msg, _) -> msg
-        | AuthenticationError msg -> msg
-        | QueryError(_, msg, _) -> msg
-        | DataCorruptionError(line, msg, _) -> sprintf "Line %d: %s" line msg
-        | DiskSpaceError(required, available) ->
-            sprintf
-                "Insufficient disk space: required %d GB, available %d GB"
-                (required / 1073741824L)
-                (available / 1073741824L)
-        | MemoryError msg -> msg
-        | ExportError(msg, _) -> msg
-        | TimeoutError(operation, duration) -> sprintf "Operation '%s' timed out after %A" operation duration
-
     let private validateUri uriStr =
         try
             let uri = Uri(uriStr)
@@ -80,7 +62,7 @@ module Configuration =
             else
                 Result.Ok uri
         with ex ->
-            Result.Error(sprintf "Invalid URI: %s" ex.Message)
+            Result.Error(sprintf "Invalid URI: %s" (ErrorAccumulation.exceptionToString ex))
 
     let private validateOutputDirectory path =
         // IMPORTANT: This function intentionally creates the directory during configuration validation.
@@ -344,85 +326,84 @@ module Configuration =
                       MaxLabelsInReferenceMode = labelsRef
                       MaxLabelsInPathCompact = labelsCompact }
             | _ ->
-                // Collect all errors from the Results
-                let errors =
-                    [ match uriResult with
-                      | Error e -> Some e
-                      | _ -> None
-                      match outputResult with
-                      | Error e -> Some(appErrorToString e)
-                      | _ -> None
-                      match minDiskGb with
-                      | Error e -> Some e
-                      | _ -> None
-                      match maxMemoryMb with
-                      | Error e -> Some e
-                      | _ -> None
-                      match skipSchema with
-                      | Error e -> Some e
-                      | _ -> None
-                      match maxRetries with
-                      | Error e -> Some e
-                      | _ -> None
-                      match retryDelayMs with
-                      | Error e -> Some e
-                      | _ -> None
-                      match maxRetryDelayMs with
-                      | Error e -> Some e
-                      | _ -> None
-                      match queryTimeout with
-                      | Error e -> Some e
-                      | _ -> None
-                      match enableDebug with
-                      | Error e -> Some e
-                      | _ -> None
-                      match validateJson with
-                      | Error e -> Some e
-                      | _ -> None
-                      match allowInsecure with
-                      | Error e -> Some e
-                      | _ -> None
-                      match batchSize with
-                      | Error e -> Some e
-                      | _ -> None
-                      match jsonBufferSizeKb with
-                      | Error e -> Some e
-                      | _ -> None
-                      match maxPathLength with
-                      | Error e -> Some e
-                      | _ -> None
-                      match pathFullModeLimit with
-                      | Error e -> Some e
-                      | _ -> None
-                      match pathCompactModeLimit with
-                      | Error e -> Some e
-                      | _ -> None
-                      match pathPropertyDepth with
-                      | Error e -> Some e
-                      | _ -> None
-                      match maxNestedDepth with
-                      | Error e -> Some e
-                      | _ -> None
-                      match nestedShallowModeDepth with
-                      | Error e -> Some e
-                      | _ -> None
-                      match nestedReferenceModeDepth with
-                      | Error e -> Some e
-                      | _ -> None
-                      match maxCollectionItems with
-                      | Error e -> Some e
-                      | _ -> None
-                      match maxLabelsPerNode with
-                      | Error e -> Some e
-                      | _ -> None
-                      match maxLabelsInReferenceMode with
-                      | Error e -> Some e
-                      | _ -> None
-                      match maxLabelsInPathCompact with
-                      | Error e -> Some e
-                      | _ -> None ]
-                    |> List.choose id
+                // Collect all Result values, converting string errors to ConfigError
+                let allResults: Result<obj, AppError> list =
+                    [ uriResult
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      outputResult |> Result.map box
+                      minDiskGb
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      maxMemoryMb
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      skipSchema
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      maxRetries
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      retryDelayMs
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      maxRetryDelayMs
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      queryTimeout
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      enableDebug
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      validateJson
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      allowInsecure
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      batchSize
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      jsonBufferSizeKb
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      maxPathLength
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      pathFullModeLimit
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      pathCompactModeLimit
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      pathPropertyDepth
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      maxNestedDepth
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      nestedShallowModeDepth
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      nestedReferenceModeDepth
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      maxCollectionItems
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      maxLabelsPerNode
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      maxLabelsInReferenceMode
+                      |> Result.mapError ConfigError
+                      |> Result.map box
+                      maxLabelsInPathCompact
+                      |> Result.mapError ConfigError
+                      |> Result.map box ]
 
-                Result.Error(ConfigError(String.concat "; " errors))
+                match ErrorAccumulation.fromResults allResults with
+                | None -> failwith "Validation logic error: should have at least one error"
+                | Some acc -> Result.Error(ErrorAccumulation.toConfigError acc)
         with ex ->
-            Result.Error(ConfigError(sprintf "Invalid configuration: %s" ex.Message))
+            Result.Error(ConfigError(sprintf "Invalid configuration: %s" (ErrorAccumulation.exceptionToString ex)))

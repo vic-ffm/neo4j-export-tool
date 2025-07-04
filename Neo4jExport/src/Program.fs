@@ -35,7 +35,7 @@ module Program =
         try
             Configuration.getConfig ()
         with ex ->
-            Error(ConfigError(sprintf "Failed to load configuration: %s" ex.Message))
+            Error(ConfigError(sprintf "Failed to load configuration: %s" (ErrorAccumulation.exceptionToString ex)))
 
     let private executeMain (context: ApplicationContext) =
         Log.info (sprintf "=== Neo4j Export Tool %s ===" (Constants.getVersionString ()))
@@ -61,7 +61,7 @@ module Program =
                 Log.warn "Export cancelled by user"
                 130
             | ex ->
-                Log.fatal (sprintf "Unexpected error: %s" ex.Message)
+                Log.fatal (sprintf "Unexpected error: %s" (ErrorAccumulation.exceptionToString ex))
                 Log.logException ex
                 1
 
@@ -75,7 +75,7 @@ module Program =
                 Cleanup.performCleanup context "Application exit"
                 Log.debug "Cleanup completed successfully"
         with ex ->
-            Log.error (sprintf "Error during final cleanup: %s" ex.Message)
+            Log.error (sprintf "Error during final cleanup: %s" (ErrorAccumulation.exceptionToString ex))
             Log.logException ex
 
     [<EntryPoint>]
@@ -95,7 +95,7 @@ module Program =
 
             exitCode
         with ex ->
-            Log.fatal (sprintf "Catastrophic error: %s" ex.Message)
+            Log.fatal (sprintf "Catastrophic error: %s" (ErrorAccumulation.exceptionToString ex))
             Log.logException ex
             performFinalCleanup context
 

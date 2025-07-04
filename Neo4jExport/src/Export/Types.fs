@@ -49,14 +49,6 @@ type WriterContext =
 type BatchProcessor =
     { Query: string
       GetTotalQuery: string option
-      ProcessRecord:
-          ArrayBufferWriter<byte>
-              -> IRecord
-              -> Guid
-              -> ExportProgress
-              -> ErrorTracker
-              -> ExportConfig
-              -> (int64 * ExportProgress)
       EntityName: string }
 
 /// Record handler that can maintain state

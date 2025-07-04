@@ -31,14 +31,25 @@ module Metadata =
     [<Literal>]
     let private FORMAT_VERSION = "1.0.0"
 
-    let private collectDatabaseInfo
-        (session: SafeSession)
-        (breaker: Neo4j.CircuitBreaker)
-        (config: ExportConfig)
-        (errorTracker: ErrorTracking.ErrorTracker)
-        =
+    /// Warning types for deduplication
+    type MetadataWarning =
+        | ConnectionFailure of phase: string * error: string
+        | QueryFailure of query: string * error: string
+        | DataMissing of dataType: string
+        | JsonSerializationFailure of dataType: string * error: string
+
+    /// For semantic comparison
+    let warningKey =
+        function
+        | ConnectionFailure(phase, _) -> sprintf "conn_%s" phase
+        | QueryFailure(query, _) -> sprintf "query_%s" (query.Substring(0, min 50 query.Length))
+        | DataMissing dataType -> sprintf "missing_%s" dataType
+        | JsonSerializationFailure(dataType, _) -> sprintf "json_%s" dataType
+
+    let private collectDatabaseInfo (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) =
         async {
             let info = Dictionary<string, JsonValue>()
+            let mutable warnings = []
 
             try
                 let! result =
@@ -60,19 +71,17 @@ module Metadata =
                         info.["version"] <- JString "unknown"
                         info.["edition"] <- JString "unknown"
                 | Error e ->
-                    let msg =
-                        sprintf "Failed to retrieve database version info: %A" e
+                    warnings <-
+                        QueryFailure("dbms.components", (ErrorAccumulation.appErrorToString e))
+                        :: warnings
 
-                    Log.warn msg
-                    errorTracker.AddWarning(msg)
                     info.["version"] <- JString "unknown"
                     info.["edition"] <- JString "unknown"
             with ex ->
-                let msg =
-                    sprintf "Exception while collecting database info: %s" ex.Message
+                warnings <-
+                    ConnectionFailure("database_info", (ErrorAccumulation.exceptionToString ex))
+                    :: warnings
 
-                Log.warn msg
-                errorTracker.AddWarning(msg)
                 info.["version"] <- JString "unknown"
                 info.["edition"] <- JString "unknown"
 
@@ -91,40 +100,29 @@ module Metadata =
                     match records with
                     | [ name ] -> info.["database_name"] <- JString name
                     | _ ->
-                        let msg =
-                            "Could not retrieve database name, using default"
-
-                        Log.warn msg
-                        errorTracker.AddWarning(msg)
+                        warnings <- DataMissing("database_name") :: warnings
                         info.["database_name"] <- JString "neo4j"
                 | Error e ->
-                    let msg =
-                        sprintf "Failed to retrieve database name: %A" e
+                    warnings <-
+                        QueryFailure("db.info", (ErrorAccumulation.appErrorToString e))
+                        :: warnings
 
-                    Log.warn msg
-                    errorTracker.AddWarning(msg)
                     info.["database_name"] <- JString "neo4j"
             with ex ->
-                let msg =
-                    sprintf "Exception while retrieving database name: %s" ex.Message
+                warnings <-
+                    ConnectionFailure("database_name", (ErrorAccumulation.exceptionToString ex))
+                    :: warnings
 
-                Log.warn msg
-                errorTracker.AddWarning(msg)
                 info.["database_name"] <- JString "neo4j"
 
-
-            return Ok(info :> IDictionary<string, JsonValue>)
+            return Ok(info :> IDictionary<string, JsonValue>), warnings
         }
 
-    let private collectStatistics
-        (session: SafeSession)
-        (breaker: Neo4j.CircuitBreaker)
-        (config: ExportConfig)
-        (errorTracker: ErrorTracking.ErrorTracker)
-        =
+    let private collectStatistics (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) =
         async {
             Log.info "Collecting database statistics..."
             let stats = Dictionary<string, JsonValue>()
+            let mutable warnings = []
 
             try
                 let query =
@@ -151,49 +149,52 @@ module Metadata =
                         stats.["nodeCount"] <- JNumber(decimal nodeCount)
                         stats.["relCount"] <- JNumber(decimal relCount)
                     | _ ->
-                        let msg = "No results from statistics query"
-                        Log.warn msg
-                        errorTracker.AddWarning(msg)
+                        warnings <- DataMissing("statistics") :: warnings
                         stats.["nodeCount"] <- JNumber 0M
                         stats.["relCount"] <- JNumber 0M
                 | Error e ->
-                    let msg =
-                        sprintf "Failed to collect statistics: %A" e
+                    warnings <-
+                        QueryFailure("statistics_query", (ErrorAccumulation.appErrorToString e))
+                        :: warnings
 
-                    Log.warn msg
-                    errorTracker.AddWarning(msg)
                     stats.["nodeCount"] <- JNumber 0M
                     stats.["relCount"] <- JNumber 0M
             with ex ->
-                let msg =
-                    sprintf "Exception while collecting statistics: %s" ex.Message
+                warnings <-
+                    ConnectionFailure("statistics", (ErrorAccumulation.exceptionToString ex))
+                    :: warnings
 
-                Log.warn msg
-                errorTracker.AddWarning(msg)
                 stats.["nodeCount"] <- JNumber 0M
                 stats.["relCount"] <- JNumber 0M
 
             stats.["labelCount"] <- JNumber 0M
             stats.["relTypeCount"] <- JNumber 0M
-            return Ok(stats :> IDictionary<string, JsonValue>)
+            return Ok(stats :> IDictionary<string, JsonValue>), warnings
         }
 
-    let private collectSchema
-        (session: SafeSession)
-        (breaker: Neo4j.CircuitBreaker)
-        (config: ExportConfig)
-        (errorTracker: ErrorTracking.ErrorTracker)
-        =
+    let private collectSchema (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) =
         async {
             if config.SkipSchemaCollection then
                 Log.info "Skipping schema collection (disabled by configuration)"
-                return Ok(dict [])
+                return Ok(dict []), []
             else
                 Log.info "Collecting basic schema information..."
                 let schema = Dictionary<string, JsonValue>()
+                let mutable warnings = []
 
                 let jsonConversionError =
                     JString "serialization_error" // A sensible default
+
+                // Helper to handle JSON conversion warnings
+                let toJsonValueWithWarning obj =
+                    match JsonHelpers.toJsonValue obj with
+                    | Ok jsonValue -> jsonValue
+                    | Error _ ->
+                        warnings <-
+                            JsonSerializationFailure("schema", "Failed to serialize schema data")
+                            :: warnings
+
+                        jsonConversionError
 
                 try
                     let! result =
@@ -208,26 +209,16 @@ module Metadata =
                     match result with
                     | Ok records ->
                         match records with
-                        | [ labels ] ->
-                            schema.["labels"] <- JsonHelpers.toJsonValueWithDefault jsonConversionError Log.warn labels
-                        | _ ->
-                            let msg =
-                                "Failed to collect database labels: unexpected result count"
-
-                            Log.warn msg
-                            errorTracker.AddWarning(msg)
+                        | [ labels ] -> schema.["labels"] <- toJsonValueWithWarning labels
+                        | _ -> warnings <- DataMissing("labels") :: warnings
                     | Error e ->
-                        let msg =
-                            sprintf "Failed to collect database labels: %A" e
-
-                        Log.warn msg
-                        errorTracker.AddWarning(msg)
+                        warnings <-
+                            QueryFailure("db.labels", (ErrorAccumulation.appErrorToString e))
+                            :: warnings
                 with ex ->
-                    let msg =
-                        sprintf "Exception while collecting labels: %s" ex.Message
-
-                    Log.warn msg
-                    errorTracker.AddWarning(msg)
+                    warnings <-
+                        ConnectionFailure("labels", (ErrorAccumulation.exceptionToString ex))
+                        :: warnings
 
                 try
                     let! result =
@@ -242,30 +233,44 @@ module Metadata =
                     match result with
                     | Ok records ->
                         match records with
-                        | [ types ] ->
-                            schema.["relationshipTypes"] <-
-                                JsonHelpers.toJsonValueWithDefault jsonConversionError Log.warn types
-                        | _ ->
-                            let msg =
-                                "Failed to collect relationship types: unexpected result count"
-
-                            Log.warn msg
-                            errorTracker.AddWarning(msg)
+                        | [ types ] -> schema.["relationshipTypes"] <- toJsonValueWithWarning types
+                        | _ -> warnings <- DataMissing("relationshipTypes") :: warnings
                     | Error e ->
-                        let msg =
-                            sprintf "Failed to collect relationship types: %A" e
-
-                        Log.warn msg
-                        errorTracker.AddWarning(msg)
+                        warnings <-
+                            QueryFailure("db.relationshipTypes", (ErrorAccumulation.appErrorToString e))
+                            :: warnings
                 with ex ->
-                    let msg =
-                        sprintf "Exception while collecting relationship types: %s" ex.Message
+                    warnings <-
+                        ConnectionFailure("relationshipTypes", (ErrorAccumulation.exceptionToString ex))
+                        :: warnings
 
-                    Log.warn msg
-                    errorTracker.AddWarning(msg)
-
-                return Ok(schema :> IDictionary<string, JsonValue>)
+                return Ok(schema :> IDictionary<string, JsonValue>), warnings
         }
+
+    /// Deduplicate and flush warnings to ErrorTracker
+    let private deduplicateAndFlush (warnings: MetadataWarning list) (errorTracker: ErrorTracking.ErrorTracker) =
+        warnings
+        |> List.groupBy warningKey
+        |> List.map (fun (_, group) ->
+            match group with
+            | [] -> None
+            | first :: rest ->
+                let count = 1 + List.length rest
+
+                let message =
+                    match first with
+                    | ConnectionFailure(phase, err) ->
+                        sprintf "Connection failed during %s (occurred %d times): %s" phase count err
+                    | QueryFailure(query, err) -> sprintf "Query failed (occurred %d times): %s - %s" count query err
+                    | DataMissing dataType -> sprintf "Data missing: %s (occurred %d times)" dataType count
+                    | JsonSerializationFailure(dataType, err) ->
+                        sprintf "JSON serialization failed for %s (occurred %d times): %s" dataType count err
+
+                Some message)
+        |> List.choose id
+        |> List.iter (fun msg ->
+            Log.warn msg
+            errorTracker.AddWarning(msg))
 
     let enhanceWithManifest
         (metadata: FullMetadata)
@@ -310,9 +315,26 @@ module Metadata =
         =
         async {
             Log.info "Collecting metadata..."
-            let! dbInfo = collectDatabaseInfo session breaker config errorTracker
-            let! stats = collectStatistics session breaker config errorTracker
-            let! schema = collectSchema session breaker config errorTracker
+
+            // Collect with warnings
+            let! dbInfoResult = collectDatabaseInfo session breaker config
+            let! statsResult = collectStatistics session breaker config
+            let! schemaResult = collectSchema session breaker config
+
+            // Extract results and warnings
+            let dbInfo, dbWarnings = dbInfoResult
+            let stats, statsWarnings = statsResult
+            let schema, schemaWarnings = schemaResult
+
+            // Accumulate all warnings
+            let allWarnings =
+                [ dbWarnings
+                  statsWarnings
+                  schemaWarnings ]
+                |> List.concat
+
+            // Single deduplication and flush
+            deduplicateAndFlush allWarnings errorTracker
 
             match dbInfo, stats, schema with
             | Ok db, Ok st, Ok sc ->
