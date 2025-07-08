@@ -11,7 +11,7 @@ Version is defined in a few central locations and automatically propagated throu
    - Used by: .NET build system, F# assemblies
    - Provides: Assembly version, file version, product version
 
-3. **`README.md`** - Manually updated for documentation
+3. **`README.md`** - Automatically updated by the version script
    - Shows the current version to users
 
 ## How Versions Are Used
@@ -20,21 +20,36 @@ Version is defined in a few central locations and automatically propagated throu
 - **Makefile**: Reads from `.version` file via `$(shell cat .version)`
 - **Docker Compose**: Uses `${VERSION}` environment variable set by Makefile
 - **Export Metadata**: Automatically includes version in exported JSONL files
+- **GitHub Releases**: Uses version from `Directory.Build.props` plus build number (e.g., `v0.14.0-11`)
 
 ## Updating the Version
 
 Use the provided script to update all version references:
 
 ```bash
+# Can be run from any directory
+./scripts/update-version.sh 0.11.0
+
+# Or from within scripts directory
 ./update-version.sh 0.11.0
 ```
 
 This will update:
 - `.version` file
-- `Directory.Build.props` 
-- `README.md`
+- `Directory.Build.props` (Version, AssemblyVersion, FileVersion)
+- `README.md` (all "Version X.Y.Z" references)
 
 All other references will automatically pick up the new version.
+
+## GitHub Release Versioning
+
+The GitHub Actions workflow creates releases with the format: `v{version}-{run_number}`
+
+For example:
+- Local version: `0.14.0`
+- GitHub release: `v0.14.0-11` (where 11 is the GitHub Actions run number)
+
+This ensures each release is unique even if the version hasn't changed.
 
 ## Version Format
 
