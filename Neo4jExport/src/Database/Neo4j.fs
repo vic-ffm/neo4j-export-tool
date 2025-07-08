@@ -362,3 +362,18 @@ module Neo4j =
             | Error e, _
             | _, Error e -> return Error e
         }
+
+    /// Public query execution functions returned by factory
+    [<AbstractClass>]
+    type QueryExecutors() =
+        abstract member StreamQuery: string -> (IRecord -> Async<unit>) -> Async<Result<unit, AppError>>
+        abstract member ListQuery<'T> : string -> (IRecord -> 'T) -> int -> Async<Result<'T list, AppError>>
+
+    /// Create query executors with captured database context
+    let createQueryExecutors session breaker config =
+        { new QueryExecutors() with
+            member _.StreamQuery query processRecord =
+                executeQueryStreaming session breaker config query processRecord
+
+            member _.ListQuery query mapper maxResults =
+                executeQueryList session breaker config query mapper maxResults }

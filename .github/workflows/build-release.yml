@@ -124,6 +124,26 @@ jobs:
         mv ./publish/windows-x64/neo4j-export.exe ./publish/neo4j-export-windows-amd64.exe
         mv ./publish/windows-arm64/neo4j-export.exe ./publish/neo4j-export-windows-arm64.exe
         
+    - name: Create Windows bundles
+      run: |
+        # Create Windows x64 bundle
+        mkdir -p ./publish/neo4j-export-windows-x64
+        cp ./publish/neo4j-export-windows-amd64.exe ./publish/neo4j-export-windows-x64/
+        cp ./scripts/run-neo4j-export-windows.bat ./publish/neo4j-export-windows-x64/
+        cp ./docs/Install.txt ./publish/neo4j-export-windows-x64/
+        cd ./publish
+        zip -r neo4j-export-windows-x64.zip neo4j-export-windows-x64/
+        cd ..
+        
+        # Create Windows ARM64 bundle
+        mkdir -p ./publish/neo4j-export-windows-arm64
+        cp ./publish/neo4j-export-windows-arm64.exe ./publish/neo4j-export-windows-arm64/
+        cp ./scripts/run-neo4j-export-windows.bat ./publish/neo4j-export-windows-arm64/
+        cp ./docs/Install.txt ./publish/neo4j-export-windows-arm64/
+        cd ./publish
+        zip -r neo4j-export-windows-arm64.zip neo4j-export-windows-arm64/
+        cd ..
+        
     - name: Create checksums
       run: |
         cd ./publish
@@ -135,7 +155,9 @@ jobs:
       with:
         name: neo4j-export-binaries
         path: |
-          ./publish/neo4j-export-*
+          ./publish/neo4j-export-darwin-*
+          ./publish/neo4j-export-linux-*
+          ./publish/neo4j-export-windows-*.zip
           ./publish/checksums.txt
         retention-days: 90
         
@@ -149,7 +171,9 @@ jobs:
         prerelease: false
         generate_release_notes: true
         files: |
-          ./publish/neo4j-export-*
+          ./publish/neo4j-export-darwin-*
+          ./publish/neo4j-export-linux-*
+          ./publish/neo4j-export-windows-*.zip
           ./publish/checksums.txt
         body: |
           ## Neo4j Export Tool v${{ steps.version.outputs.version }}
@@ -162,13 +186,16 @@ jobs:
           | macOS | Intel (x64) | [neo4j-export-darwin-amd64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-darwin-amd64) |
           | Linux | x64 | [neo4j-export-linux-amd64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-linux-amd64) |
           | Linux | ARM64 | [neo4j-export-linux-arm64](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-linux-arm64) |
-          | Windows | x64 | [neo4j-export-windows-amd64.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-windows-amd64.exe) |
-          | Windows | ARM64 | [neo4j-export-windows-arm64.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-windows-arm64.exe) |
+          | Windows | x64 (Bundle) | [neo4j-export-windows-x64.zip](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-windows-x64.zip) |
+          | Windows | ARM64 (Bundle) | [neo4j-export-windows-arm64.zip](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}-${{ github.run_number }}/neo4j-export-windows-arm64.zip) |
           
           ### Installation
           
+          **Windows**: Download the zip bundle which includes the executable, batch script, and installation instructions
+          
+          **macOS/Linux**: 
           1. Download the appropriate binary for your platform
-          2. Make it executable (macOS/Linux): `chmod +x neo4j-export-*`
+          2. Make it executable: `chmod +x neo4j-export-*`
           3. Move to your PATH or run directly
           
           ### Verify checksums

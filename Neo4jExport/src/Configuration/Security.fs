@@ -39,6 +39,7 @@ module Security =
 
             let mutable charCount = 0
 
+            /// Count characters rather than bytes to handle escaped sequences correctly
             for c in str do
                 if charCount >= maxLength then
                     ()

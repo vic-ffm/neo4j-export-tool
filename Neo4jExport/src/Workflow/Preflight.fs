@@ -256,16 +256,16 @@ module Preflight =
                         (Utils.formatBytes workingSetBytes)
                 )
 
-                let currentMemory =
-                    max gcMemory workingSetBytes
-
-                if currentMemory > maxMemoryBytes then
+                // Only use working set for memory limit check since it includes all process memory
+                // (managed heap + runtime + native libs + thread stacks + etc.)
+                // We still log GC memory for diagnostic purposes to help identify memory issues
+                if workingSetBytes > maxMemoryBytes then
                     return
                         Error(
                             MemoryError(
                                 sprintf
                                     "Current memory usage exceeds limit. Current: %s, Max: %s"
-                                    (Utils.formatBytes currentMemory)
+                                    (Utils.formatBytes workingSetBytes)
                                     (Utils.formatBytes maxMemoryBytes)
                             )
                         )

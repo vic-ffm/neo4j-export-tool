@@ -30,36 +30,256 @@ open System.Text.Json
 open Neo4j.Driver
 open Neo4jExport
 open Neo4jExport.ExportTypes
-open Neo4jExport.ExportUtils
 open Neo4jExport.SerializationEngine
 open Neo4jExport.ExportBatchProcessing
 open ErrorTracking
 
+/// Query building functions that adapt to Neo4j version
+module QueryBuilders =
+    /// Build node query for current SKIP/LIMIT implementation
+    let buildNodeQuery (version: Neo4jVersion) =
+        match version with
+        | V4x -> "MATCH (n) RETURN n, labels(n) as labels, id(n) as nodeId ORDER BY id(n) SKIP $skip LIMIT $limit"
+        | V5x
+        | V6x
+        | Unknown ->
+            "MATCH (n) RETURN n, labels(n) as labels, elementId(n) as nodeId ORDER BY elementId(n) SKIP $skip LIMIT $limit"
+
+    /// Build node query for future keyset pagination
+    let buildNodeQueryKeyset (version: Neo4jVersion) (lastId: KeysetId option) =
+        let whereClause = 
+            match version, lastId with
+            | V4x, Some (NumericId id) -> sprintf "WHERE id(n) > %d" id
+            | (V5x | V6x), Some (ElementId id) -> sprintf "WHERE elementId(n) > '%s'" id
+            | _ -> ""
+
+        match version with
+        | V4x ->
+            // For Neo4j 4.x: Return raw node to minimize DB load
+            // We return the node object directly and handle temporal conversion in .NET
+            // to avoid putting computational load on the production database
+            sprintf """
+            MATCH (n)
+            %s
+            RETURN 
+                toString(id(n)) AS elementId,
+                labels(n) AS labels,
+                n AS node,
+                id(n) AS nodeId
+            ORDER BY id(n)
+            LIMIT $limit
+            """ whereClause
+        | V5x | V6x | Unknown ->
+            // For Neo4j 5.x+: Also return raw node (same strategy as 4.x)
+            // Although 5.x supports type operators like IS ::DATETIME, we chose to
+            // use the same approach as 4.x to minimize database CPU usage.
+            // Temporal conversion happens in BatchProcessing.fs instead.
+            sprintf """
+            MATCH (n)
+            %s
+            RETURN 
+                elementId(n) AS elementId,
+                labels(n) AS labels,
+                n AS node,
+                elementId(n) AS nodeId
+            ORDER BY elementId(n)
+            LIMIT $limit
+            """ whereClause
+
+    /// Build relationship query for current SKIP/LIMIT implementation
+    let buildRelationshipQuery (version: Neo4jVersion) =
+        match version with
+        | V4x -> "MATCH ()-[r]->() RETURN r, type(r) as type, id(r) as relId ORDER BY id(r) SKIP $skip LIMIT $limit"
+        | V5x
+        | V6x
+        | Unknown ->
+            "MATCH ()-[r]->() RETURN r, type(r) as type, elementId(r) as relId ORDER BY elementId(r) SKIP $skip LIMIT $limit"
+
+    /// Build relationship query for future keyset pagination
+    let buildRelationshipQueryKeyset (version: Neo4jVersion) (lastId: KeysetId option) =
+        let whereClause = 
+            match version, lastId with
+            | V4x, Some (NumericId id) -> sprintf "WHERE id(r) > %d" id
+            | (V5x | V6x), Some (ElementId id) -> sprintf "WHERE elementId(r) > '%s'" id
+            | _ -> ""
+
+        match version with
+        | V4x ->
+            // For Neo4j 4.x: Return raw relationship to minimize DB load
+            // We return the relationship object directly and handle temporal conversion in .NET
+            // to avoid putting computational load on the production database
+            sprintf """
+            MATCH (startNode)-[r]->(endNode)
+            %s
+            RETURN 
+                toString(id(r)) AS elementId,
+                type(r) AS type,
+                toString(id(startNode)) AS startNodeElementId,
+                toString(id(endNode)) AS endNodeElementId,
+                r AS relationship,
+                id(r) AS relId
+            ORDER BY id(r)
+            LIMIT $limit
+            """ whereClause
+        | V5x | V6x | Unknown ->
+            // For Neo4j 5.x+: Also return raw relationship (same strategy as 4.x)
+            // Although 5.x supports type operators like IS ::DATETIME, we chose to
+            // use the same approach as 4.x to minimize database CPU usage.
+            // Temporal conversion happens in BatchProcessing.fs instead.
+            sprintf """
+            MATCH (startNode)-[r]->(endNode)
+            %s
+            RETURN 
+                elementId(r) AS elementId,
+                type(r) AS type,
+                elementId(startNode) AS startNodeElementId,
+                elementId(endNode) AS endNodeElementId,
+                r AS relationship,
+                elementId(r) AS relId
+            ORDER BY elementId(r)
+            LIMIT $limit
+            """ whereClause
+
+    /// Build query parameters based on pagination state
+    let buildQueryParameters (lastId: KeysetId option) (batchSize: int) (skip: int option) =
+        match lastId, skip with
+        | None, None -> dict [ "limit", box batchSize ]
+        | Some id, None ->
+            dict
+                [ "lastId", KeysetId.toParameter id
+                  "limit", box batchSize ]
+        | None, Some s ->
+            dict
+                [ "skip", box s
+                  "limit", box batchSize ]
+        | Some _, Some _ -> failwith "Cannot use both lastId and skip parameters"
+
+    /// Build count query for nodes
+    let buildNodeCountQuery (_: Neo4jVersion) = "MATCH (n) RETURN count(n) as count"
+
+    /// Build count query for relationships
+    let buildRelationshipCountQuery (_: Neo4jVersion) =
+        "MATCH ()-[r]->() RETURN count(r) as count"
+
+    // Add these new functions to the existing QueryBuilders module:
+
+    /// Build query and parameters based on pagination strategy
+    /// Note: This function needs the version from the processor to build correct queries
+    let buildNodeQueryWithParams
+        (version: Neo4jVersion)
+        (strategy: PaginationStrategy)
+        (batchSize: int)
+        : string * IDictionary<string, obj> =
+        match strategy with
+        | SkipLimit skip ->
+            // Use the actual version to build the correct query
+            let query = buildNodeQuery version
+
+            let parameters =
+                dict
+                    [ "skip", box skip
+                      "limit", box batchSize ]
+
+            query, parameters
+
+        | Keyset(lastId, version) ->
+            // Use the already implemented buildNodeQueryKeyset
+            let query =
+                buildNodeQueryKeyset version lastId
+
+            let parameters =
+                buildQueryParameters lastId batchSize None
+
+            query, parameters
+
+    /// Similar function for relationships
+    let buildRelationshipQueryWithParams
+        (version: Neo4jVersion)
+        (strategy: PaginationStrategy)
+        (batchSize: int)
+        : string * IDictionary<string, obj> =
+        match strategy with
+        | SkipLimit skip ->
+            let query = buildRelationshipQuery version
+
+            let parameters =
+                dict
+                    [ "skip", box skip
+                      "limit", box batchSize ]
+
+            query, parameters
+
+        | Keyset(lastId, version) ->
+            // Use the already implemented buildRelationshipQueryKeyset
+            let query =
+                buildRelationshipQueryKeyset version lastId
+
+            let parameters =
+                buildQueryParameters lastId batchSize None
+
+            query, parameters
+
+/// Factory functions for creating export processors
+module ExportProcessors =
+    /// Create processor for node export with version-specific queries
+    let createNodeProcessor (version: Neo4jVersion) =
+        match version with
+        | Unknown ->
+            // Legacy SKIP/LIMIT for unknown versions
+            BatchProcessor.CreateLegacy(
+                QueryBuilders.buildNodeQuery version,
+                Some(QueryBuilders.buildNodeCountQuery version),
+                "Nodes",
+                version
+            )
+        | _ ->
+            // Use dynamic query builder for known versions
+            BatchProcessor.CreateDynamic(
+                QueryBuilders.buildNodeQueryWithParams,
+                Some(QueryBuilders.buildNodeCountQuery version),
+                "Nodes",
+                version
+            )
+
+    /// Create processor for relationship export with version-specific queries
+    let createRelationshipProcessor (version: Neo4jVersion) =
+        match version with
+        | Unknown ->
+            // Legacy SKIP/LIMIT for unknown versions
+            BatchProcessor.CreateLegacy(
+                QueryBuilders.buildRelationshipQuery version,
+                Some(QueryBuilders.buildRelationshipCountQuery version),
+                "Relationships",
+                version
+            )
+        | _ ->
+            // Use dynamic query builder for known versions
+            BatchProcessor.CreateDynamic(
+                QueryBuilders.buildRelationshipQueryWithParams,
+                Some(QueryBuilders.buildRelationshipCountQuery version),
+                "Relationships",
+                version
+            )
+
 /// Unified node export with statistics
 let exportNodesUnified
-    (context: ApplicationContext)
     (session: SafeSession)
-    (config: ExportConfig)
     (fileStream: FileStream)
-    (stats: ExportProgress)
-    (exportId: Guid)
-    (errorTracker: ErrorTracker)
-    (lineState: LineTrackingState)
+    (exportCtx: ExportContext)
+    (exportState: ExportState)
+    (processor: BatchProcessor)
     : Async<Result<(ExportProgress * LabelStatsTracker.Tracker * LineTrackingState), AppError>> =
     async {
         Log.info "Exporting nodes with label statistics..."
 
         let initialState: NodeExportState =
-            { LineState = lineState |> LineTracking.recordTypeStart "node"
+            { LineState =
+                exportCtx.Progress.LineState
+                |> LineTracking.recordTypeStart "node"
               LabelTracker = LabelStatsTracker.create () }
 
-        let processor =
-            { Query = "MATCH (n) RETURN n, labels(n) as labels SKIP $skip LIMIT $limit"
-              GetTotalQuery = Some "MATCH (n) RETURN count(n) as count"
-              EntityName = "Nodes" }
-
         let nodeHandler (state: NodeExportState) (record: IRecord) (bytesWritten: int64) : NodeExportState =
-            errorTracker.IncrementLine()
+            exportCtx.Error.Funcs.IncrementLine()
 
             let newLineState =
                 state.LineState |> LineTracking.incrementLine
@@ -90,79 +310,76 @@ let exportNodesUnified
             { LineState = newLineState
               LabelTracker = newLabelTracker }
 
-        match!
-            processBatchedQuery
-                processor
-                context
-                session
-                config
-                fileStream
-                stats
-                exportId
-                errorTracker
-                initialState
-                nodeHandler
-        with
+        // Create batch context with provided parameters
+        let batchCtx =
+            BatchContext.createFull processor session fileStream (exportCtx.Config.JsonBufferSizeKb * 1024)
+
+        let versionOpt =
+            match processor.QueryBuilder with
+            | Some _ -> Some processor.Version // Get version from processor if using dynamic queries
+            | None -> None // Use legacy SKIP/LIMIT
+
+        match! processBatchedQuery batchCtx exportCtx exportState initialState nodeHandler versionOpt with
         | Error e -> return Error e
-        | Ok(finalStats, finalState) -> return Ok(finalStats, finalState.LabelTracker, finalState.LineState)
+        | Ok(finalStats, finalState) ->
+            // Dispose batch context
+            batchCtx.Buffer.Clear()
+            
+            // Log ID mapping statistics
+            Log.info (sprintf "Node export complete. Stable ID mappings created: %d" 
+                exportState.NodeIdMapping.Count)
+            
+            return Ok(finalStats, finalState.LabelTracker, finalState.LineState)
     }
 
 let exportRelationships
-    (context: ApplicationContext)
     (session: SafeSession)
-    (config: ExportConfig)
     (fileStream: FileStream)
-    stats
-    exportId
-    (errorTracker: ErrorTracker)
-    (lineState: LineTrackingState)
+    (exportCtx: ExportContext)
+    (exportState: ExportState)
+    (processor: BatchProcessor)
     : Async<Result<(ExportProgress * LineTrackingState), AppError>> =
     async {
         Log.info "Exporting relationships..."
 
         let initialState: RelationshipExportState =
-            lineState
+            exportCtx.Progress.LineState
             |> LineTracking.recordTypeStart "relationship"
-
-        let processor =
-            { Query = "MATCH (s)-[r]->(t) RETURN r, s, t SKIP $skip LIMIT $limit"
-              GetTotalQuery = Some "MATCH ()-[r]->() RETURN count(r) as count"
-              EntityName = "Relationships" }
 
         let relationshipHandler
             (state: RelationshipExportState)
             (record: IRecord)
             (bytesWritten: int64)
             : RelationshipExportState =
-            errorTracker.IncrementLine()
+            exportCtx.Error.Funcs.IncrementLine()
             state |> LineTracking.incrementLine
 
-        match!
-            processBatchedQuery
-                processor
-                context
-                session
-                config
-                fileStream
-                stats
-                exportId
-                errorTracker
-                initialState
-                relationshipHandler
-        with
+        // Create batch context with provided parameters
+        let batchCtx =
+            BatchContext.createFull processor session fileStream (exportCtx.Config.JsonBufferSizeKb * 1024)
+
+        let versionOpt =
+            match processor.QueryBuilder with
+            | Some _ -> Some processor.Version
+            | None -> None
+
+        match! processBatchedQuery batchCtx exportCtx exportState initialState relationshipHandler versionOpt with
         | Error e -> return Error e
-        | Ok(finalStats, finalState) -> return Ok(finalStats, finalState)
+        | Ok(finalStats, finalState) ->
+            // Dispose batch context
+            batchCtx.Buffer.Clear()
+            return Ok(finalStats, finalState)
     }
 
 /// Export error and warning records from the error tracker
 let exportErrors
     (fileStream: FileStream)
-    (errorTracker: ErrorTracker)
+    (errorFuncs: ErrorTrackingFunctions)
     (exportId: Guid)
     (lineState: LineTrackingState)
     : Async<int64 * LineTrackingState> =
     async {
-        let errors = errorTracker.GetErrors()
+        let errors = errorFuncs.Queries.GetErrors()
         let mutable count = 0L
         let mutable currentLineState = lineState
 
@@ -217,9 +434,6 @@ let exportErrors
 
         return (count, currentLineState)
     }
-
-/// Common export completion logging
-let private logExportCompletion (_stats: CompletedExportStats) = ()
 
 /// Validates and moves temporary export file to final destination with metadata-based naming
 let finalizeExport _ (config: ExportConfig) (metadata: FullMetadata) (tempFile: string) (stats: CompletedExportStats) =

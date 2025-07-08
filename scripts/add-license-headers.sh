@@ -87,7 +87,7 @@ echo ""
 # Find all F# source files and process them
 while IFS= read -r -d '' file; do
     process_file "$file"
-done < <(find Neo4jExport/src -name "*.fs" -type f -print0 | sort -z)
+done < <(find ../Neo4jExport/src -name "*.fs" -type f -print0 | sort -z)
 
 # Summary
 echo ""

@@ -29,6 +29,7 @@ open Neo4jExport
 open Neo4jExport.ExportTypes
 open Neo4jExport.SerializationContext
 open Neo4jExport.SerializationCollections
+open Neo4jExport.JsonHelpers
 open ErrorTracking
 
 let private generatePathSequenceTailRec nodeCount relCount =
@@ -50,12 +51,7 @@ let private generatePathSequenceTailRec nodeCount relCount =
 
     loop [] 0 0 true
 
-let private serializePathFull
-    (writer: Utf8JsonWriter)
-    (path: IPath)
-    (config: ExportConfig)
-    (errorTracker: ErrorTracker)
-    =
+let private serializePathFull (writer: Utf8JsonWriter) (ctx: WriterContext) (path: IPath) =
     writer.WritePropertyName("nodes")
     writer.WriteStartArray()
 
@@ -69,7 +65,7 @@ let private serializePathFull
         writer.WriteEndArray()
         writer.WritePropertyName("properties")
         writer.WriteStartObject()
-        serializeProperties writer node.Properties SerializationDepth.zero config errorTracker
+        serializeProperties writer ctx SerializationDepth.zero node.Properties
         writer.WriteEndObject()
         writer.WriteEndObject())
 
@@ -87,13 +83,13 @@ let private serializePathFull
         writer.WriteString("end_element_id", rel.EndNodeElementId)
         writer.WritePropertyName("properties")
         writer.WriteStartObject()
-        serializeProperties writer rel.Properties SerializationDepth.zero config errorTracker
+        serializeProperties writer ctx SerializationDepth.zero rel.Properties
         writer.WriteEndObject()
         writer.WriteEndObject())
 
     writer.WriteEndArray()
 
-let private serializePathCompact (writer: Utf8JsonWriter) (path: IPath) (config: ExportConfig) =
+let private serializePathCompact (writer: Utf8JsonWriter) (ctx: WriterContext) (path: IPath) =
     writer.WritePropertyName("nodes")
     writer.WriteStartArray()
 
@@ -105,7 +101,7 @@ let private serializePathCompact (writer: Utf8JsonWriter) (path: IPath) (config:
         writer.WriteStartArray()
 
         node.Labels
-        |> Seq.truncate config.MaxLabelsInPathCompact
+        |> Seq.truncate ctx.Config.MaxLabelsInPathCompact
         |> Seq.iter writer.WriteStringValue
 
         writer.WriteEndArray()
@@ -142,11 +138,12 @@ let private serializePathIdsOnly (writer: Utf8JsonWriter) (path: IPath) =
 
     writer.WriteEndArray()
 
-let serializePath (writer: Utf8JsonWriter) (path: IPath) (config: ExportConfig) (errorTracker: ErrorTracker) =
-    if int64 path.Nodes.Count > config.MaxPathLength then
-        errorTracker.AddError(
-            sprintf "Path too long: %d nodes exceeds maximum %d" path.Nodes.Count config.MaxPathLength
-        )
+let serializePath (writer: Utf8JsonWriter) (ctx: WriterContext) (path: IPath) =
+    if int64 path.Nodes.Count > ctx.Config.MaxPathLength then
+        ctx.ErrorFuncs.TrackError
+            (sprintf "Path too long: %d nodes exceeds maximum %d" path.Nodes.Count ctx.Config.MaxPathLength)
+            None
+            (createErrorContext None [ "path_segment_count", box path.Nodes.Count ])
 
         writer.WriteStartObject()
         writer.WriteString("_type", "path")
@@ -154,17 +151,19 @@ let serializePath (writer: Utf8JsonWriter) (path: IPath) (config: ExportConfig) 
         writer.WriteEndObject()
     else
         let level =
-            determinePathLevel path.Nodes.Count config
+            determinePathLevel path.Nodes.Count ctx.Config
 
         match level with
         | Compact ->
-            errorTracker.AddWarning(
-                sprintf "Path length %d exceeds full threshold, automatically using Compact mode" path.Nodes.Count
-            )
+            ctx.ErrorFuncs.TrackWarning
+                (sprintf "Path length %d exceeds full threshold, automatically using Compact mode" path.Nodes.Count)
+                None
+                None
         | IdsOnly ->
-            errorTracker.AddWarning(
-                sprintf "Path length %d exceeds compact threshold, automatically using IdsOnly mode" path.Nodes.Count
-            )
+            ctx.ErrorFuncs.TrackWarning
+                (sprintf "Path length %d exceeds compact threshold, automatically using IdsOnly mode" path.Nodes.Count)
+                None
+                None
         | Full -> ()
 
         writer.WriteStartObject()
@@ -173,8 +172,8 @@ let serializePath (writer: Utf8JsonWriter) (path: IPath) (config: ExportConfig) 
         writer.WriteString("_serialization_level", level.ToString())
 
         match level with
-        | Full -> serializePathFull writer path config errorTracker
-        | Compact -> serializePathCompact writer path config
+        | Full -> serializePathFull writer ctx path
+        | Compact -> serializePathCompact writer ctx path
         | IdsOnly -> serializePathIdsOnly writer path
 
         writer.WritePropertyName("sequence")

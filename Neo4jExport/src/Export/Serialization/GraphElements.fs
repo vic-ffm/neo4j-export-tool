@@ -33,18 +33,12 @@ open Neo4jExport.SerializationCollections
 open ErrorTracking
 
 /// Forward declaration for serializePath
-let mutable serializePathFunc: (Utf8JsonWriter -> IPath -> ExportConfig -> ErrorTracker -> unit) option =
+let mutable serializePathFunc: (Utf8JsonWriter -> WriterContext -> IPath -> unit) option =
     None
 
-let serializeNode
-    (writer: Utf8JsonWriter)
-    (node: INode)
-    (depth: SerializationDepth)
-    (config: ExportConfig)
-    (errorTracker: ErrorTracker)
-    =
+let serializeNode (writer: Utf8JsonWriter) (ctx: WriterContext) (depth: SerializationDepth) (node: INode) =
     let level =
-        determineNestedLevel depth config
+        determineNestedLevel depth ctx.Config
 
     match level with
     | Reference ->
@@ -55,7 +49,7 @@ let serializeNode
         writer.WriteStartArray()
 
         node.Labels
-        |> Seq.truncate config.MaxLabelsInReferenceMode
+        |> Seq.truncate ctx.Config.MaxLabelsInReferenceMode
         |> Seq.iter writer.WriteStringValue
 
         writer.WriteEndArray()
@@ -83,19 +77,18 @@ let serializeNode
 
         writer.WritePropertyName("properties")
         writer.WriteStartObject()
-        serializeProperties writer node.Properties (SerializationDepth.increment depth) config errorTracker
+        serializeProperties writer ctx (SerializationDepth.increment depth) node.Properties
         writer.WriteEndObject()
         writer.WriteEndObject()
 
 let serializeRelationship
     (writer: Utf8JsonWriter)
-    (rel: IRelationship)
+    (ctx: WriterContext)
     (depth: SerializationDepth)
-    (config: ExportConfig)
-    (errorTracker: ErrorTracker)
+    (rel: IRelationship)
     =
     let level =
-        determineNestedLevel depth config
+        determineNestedLevel depth ctx.Config
 
     match level with
     | Reference ->
@@ -125,14 +118,15 @@ let serializeRelationship
 
         writer.WritePropertyName("properties")
         writer.WriteStartObject()
-        serializeProperties writer rel.Properties (SerializationDepth.increment depth) config errorTracker
+        serializeProperties writer ctx (SerializationDepth.increment depth) rel.Properties
         writer.WriteEndObject()
         writer.WriteEndObject()
 
-let writeNode (writer: Utf8JsonWriter) (node: INode) (elementId: string) (ctx: WriterContext) =
+let writeNode (writer: Utf8JsonWriter) (node: INode) (elementId: string) (stableId: string) (ctx: WriterContext) =
     writer.WriteStartObject()
     writer.WriteString("type", "node")
     writer.WriteString("element_id", elementId)
+    writer.WriteString("NET_node_content_hash", stableId)
     writer.WriteString("export_id", ctx.ExportId.ToString())
     writer.WriteStartArray("labels")
 
@@ -142,48 +136,50 @@ let writeNode (writer: Utf8JsonWriter) (node: INode) (elementId: string) (ctx: W
         match validateLabel label elementId with
         | Ok safeLabel -> writer.WriteStringValue safeLabel
         | Error msg ->
-            ctx.ErrorTracker.AddWarning(msg, ?elementId = Some elementId)
+            ctx.ErrorFuncs.TrackWarning msg (Some elementId) None
             writer.WriteStringValue "_invalid_label")
 
     writer.WriteEndArray()
     writer.WriteStartObject "properties"
 
-    serializeProperties writer node.Properties SerializationDepth.zero ctx.Config ctx.ErrorTracker
+    serializeProperties writer ctx SerializationDepth.zero node.Properties
 
     writer.WriteEndObject()
     writer.WriteEndObject()
 
-let writeRelationship (writer: Utf8JsonWriter) (rel: IRelationship) (ids: EntityIds) (ctx: WriterContext) =
+let writeRelationship (writer: Utf8JsonWriter) (rel: IRelationship) (ids: EntityIdsWithStable) (ctx: WriterContext) =
     writer.WriteStartObject()
     writer.WriteString("type", "relationship")
     writer.WriteString("element_id", ids.ElementId)
+    writer.WriteString("NET_rel_identity_hash", ids.StableId)
     writer.WriteString("export_id", ctx.ExportId.ToString())
 
     let safeType =
         match validateRelType rel.Type ids.ElementId with
         | Ok t -> t
         | Error msg ->
-            ctx.ErrorTracker.AddWarning(msg, ?elementId = Some ids.ElementId)
+            ctx.ErrorFuncs.TrackWarning msg (Some ids.ElementId) None
             "_invalid_type"
 
     writer.WriteString("label", safeType)
     writer.WriteString("start_element_id", ids.StartElementId)
     writer.WriteString("end_element_id", ids.EndElementId)
+    writer.WriteString("start_node_content_hash", ids.StartStableId)
+    writer.WriteString("end_node_content_hash", ids.EndStableId)
     writer.WriteStartObject("properties")
 
-    serializeProperties writer rel.Properties SerializationDepth.zero ctx.Config ctx.ErrorTracker
+    serializeProperties writer ctx SerializationDepth.zero rel.Properties
 
     writer.WriteEndObject()
     writer.WriteEndObject()
 
 let serializeGraphElement
     (writer: Utf8JsonWriter)
-    (elem: GraphElement)
+    (ctx: WriterContext)
     (depth: SerializationDepth)
-    (config: ExportConfig)
-    (errorTracker: ErrorTracker)
+    (elem: GraphElement)
     =
     match elem with
-    | GraphElement.Node node -> serializeNode writer node depth config errorTracker
-    | GraphElement.Relationship rel -> serializeRelationship writer rel depth config errorTracker
-    | GraphElement.Path path -> serializePathFunc.Value writer path config errorTracker
+    | GraphElement.Node node -> serializeNode writer ctx depth node
+    | GraphElement.Relationship rel -> serializeRelationship writer ctx depth rel
+    | GraphElement.Path path -> serializePathFunc.Value writer ctx path

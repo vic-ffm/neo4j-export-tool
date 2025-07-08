@@ -30,44 +30,35 @@ open Neo4jExport.ExportUtils
 open ErrorTracking
 
 /// Forward declaration needed due to circular dependency
-let mutable serializeValueFunc
-    : (Utf8JsonWriter -> obj -> SerializationDepth -> ExportConfig -> ErrorTracker -> unit) option =
+let mutable serializeValueFunc: (Utf8JsonWriter -> WriterContext -> SerializationDepth -> obj -> unit) option =
     None
 
-let serializeList
-    (writer: Utf8JsonWriter)
-    (list: Collections.IList)
-    (depth: SerializationDepth)
-    (config: ExportConfig)
-    (errorTracker: ErrorTracker)
-    =
+let serializeList (writer: Utf8JsonWriter) (ctx: WriterContext) (depth: SerializationDepth) (list: Collections.IList) =
     writer.WriteStartArray()
 
     let items =
         list
         |> Seq.cast<obj>
-        |> Seq.truncate config.MaxCollectionItems
+        |> Seq.truncate ctx.Config.MaxCollectionItems
         |> Seq.toList
 
     items
-    |> List.iter (fun item ->
-        serializeValueFunc.Value writer item (SerializationDepth.increment depth) config errorTracker)
+    |> List.iter (fun item -> serializeValueFunc.Value writer ctx (SerializationDepth.increment depth) item)
 
-    if list.Count > config.MaxCollectionItems then
+    if list.Count > ctx.Config.MaxCollectionItems then
         writer.WriteStartObject()
         writer.WriteString("_truncated", "list_too_large")
         writer.WriteNumber("_total_items", list.Count)
-        writer.WriteNumber("_shown_items", config.MaxCollectionItems)
+        writer.WriteNumber("_shown_items", ctx.Config.MaxCollectionItems)
         writer.WriteEndObject()
 
     writer.WriteEndArray()
 
 let serializeMap
     (writer: Utf8JsonWriter)
-    (dict: Collections.IDictionary)
+    (ctx: WriterContext)
     (depth: SerializationDepth)
-    (config: ExportConfig)
-    (errorTracker: ErrorTracker)
+    (dict: Collections.IDictionary)
     =
     writer.WriteStartObject()
     let keyTracker = createKeyTracker ()
@@ -75,7 +66,7 @@ let serializeMap
     let entries =
         dict.Keys
         |> Seq.cast<obj>
-        |> Seq.truncate config.MaxCollectionItems
+        |> Seq.truncate ctx.Config.MaxCollectionItems
         |> Seq.toList
 
     entries
@@ -90,35 +81,34 @@ let serializeMap
                 "_key_error"
 
         writer.WritePropertyName keyStr
-        serializeValueFunc.Value writer dict.[key] (SerializationDepth.increment depth) config errorTracker)
+        serializeValueFunc.Value writer ctx (SerializationDepth.increment depth) dict.[key])
 
-    if dict.Count > config.MaxCollectionItems then
+    if dict.Count > ctx.Config.MaxCollectionItems then
         writer.WriteString("_truncated", "map_too_large")
         writer.WriteNumber("_total_entries", dict.Count)
-        writer.WriteNumber("_shown_entries", config.MaxCollectionItems)
+        writer.WriteNumber("_shown_entries", ctx.Config.MaxCollectionItems)
 
     writer.WriteEndObject()
 
 let serializeProperties
     (writer: Utf8JsonWriter)
-    (properties: Collections.Generic.IReadOnlyDictionary<string, obj>)
+    (ctx: WriterContext)
     (depth: SerializationDepth)
-    (config: ExportConfig)
-    (errorTracker: ErrorTracker)
+    (properties: Collections.Generic.IReadOnlyDictionary<string, obj>)
     =
     properties
-    |> Seq.truncate config.MaxCollectionItems
+    |> Seq.truncate ctx.Config.MaxCollectionItems
     |> Seq.fold
         (fun keyTracker kvp ->
             let safePropName =
                 ensureUniqueKey kvp.Key keyTracker
 
             writer.WritePropertyName(safePropName)
-            serializeValueFunc.Value writer kvp.Value depth config errorTracker
+            serializeValueFunc.Value writer ctx depth kvp.Value
             keyTracker)
         (createKeyTracker ())
     |> ignore
 
-    if properties.Count > config.MaxCollectionItems then
+    if properties.Count > ctx.Config.MaxCollectionItems then
         writer.WritePropertyName("_truncated")
         writer.WriteStringValue(sprintf "too_many_properties: %d total" properties.Count)

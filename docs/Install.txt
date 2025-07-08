@@ -1,0 +1,58 @@
+NEO4J EXPORT TOOL - WINDOWS QUICK START
+======================================
+
+This folder contains everything you need to export your Neo4j database:
+- neo4j-export-windows-amd64.exe (the export tool)
+- run-neo4j-export-windows.bat (batch script for easy setup)
+- Install.txt (this file)
+
+QUICK START
+-----------
+
+1. Edit the batch script:
+   - Right-click "run-neo4j-export-windows.bat" and select "Edit"
+   - Update these settings with your Neo4j details:
+
+     set NEO4J_URI=bolt://localhost:7687
+     set NEO4J_USER=neo4j
+     set NEO4J_PASSWORD=your-password-here
+     set OUTPUT_DIRECTORY=C:\neo4j-exports
+
+2. Run the export:
+   - Double-click "run-neo4j-export-windows.bat"
+   - The tool will create the output directory and start exporting
+   - Press any key when finished
+
+Your export will be saved as a .jsonl file in the output directory.
+
+MANUAL USAGE (PowerShell)
+------------------------
+
+If you prefer to run the tool directly:
+
+$env:NEO4J_URI = "bolt://localhost:7687"
+$env:NEO4J_USER = "neo4j"
+$env:NEO4J_PASSWORD = "your-password"
+$env:OUTPUT_DIRECTORY = "C:\neo4j-exports"
+.\neo4j-export-windows-amd64.exe
+
+COMMON CONNECTION EXAMPLES
+-------------------------
+
+Local Neo4j:     bolt://localhost:7687
+Remote server:   bolt://your-server.com:7687
+Neo4j Aura:      neo4j+s://xxxxxxxx.databases.neo4j.io
+
+TROUBLESHOOTING
+--------------
+
+Connection refused:
+- Check Neo4j is running
+- Verify the URI and port
+
+Authentication failed:
+- Confirm username and password
+- Default Neo4j credentials are neo4j/neo4j
+
+For detailed documentation visit:
+https://github.com/vic-ffm/neo4j-export-tool

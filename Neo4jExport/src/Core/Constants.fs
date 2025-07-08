@@ -47,8 +47,6 @@ module Constants =
         let User = "NEO4J_USER"
         let Password = "NEO4J_PASSWORD"
         let OutputDirectory = "OUTPUT_DIRECTORY"
-        // Deprecated - use OUTPUT_DIRECTORY instead
-        let OutputFile = "OUTPUT_FILE"
         let MinDiskGb = "MIN_DISK_GB"
         let MaxMemoryMb = "MAX_MEMORY_MB"
 

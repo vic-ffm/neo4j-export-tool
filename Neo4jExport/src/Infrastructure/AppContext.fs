@@ -38,8 +38,7 @@ module AppContext =
     let getCancellationToken (context: ApplicationContext) = context.CancellationTokenSource.Token
 
     /// Checks if cancellation has been requested
-    let isCancellationRequested (context: ApplicationContext) =
-        context.CancellationTokenSource.Token.IsCancellationRequested
+    let isCancellationRequested (context: ApplicationContext) = CancellationOperations.check context
 
     /// Requests cancellation of all operations
     let cancel (context: ApplicationContext) =

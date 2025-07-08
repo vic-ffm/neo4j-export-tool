@@ -37,41 +37,36 @@ open Neo4jExport.SerializationGraphElements
 open Neo4jExport.SerializationPath
 open ErrorTracking
 
-let rec serializeValue
-    (writer: Utf8JsonWriter)
-    (value: obj)
-    (depth: SerializationDepth)
-    (config: ExportConfig)
-    (errorTracker: ErrorTracker)
-    =
-    if SerializationDepth.exceedsLimit config.MaxNestedDepth depth then
+let rec serializeValue (writer: Utf8JsonWriter) (ctx: WriterContext) (depth: SerializationDepth) (value: obj) =
+    if SerializationDepth.exceedsLimit ctx.Config.MaxNestedDepth depth then
         writeDepthExceeded writer value depth
     else
         try
             match value with
             | null -> serializeNull writer
-            | :? string as s -> serializeString writer s config
+            | :? string as s -> serializeString writer s ctx.Config
             | :? bool as b -> serializeBoolean writer b
             | TemporalType _ -> serializeTemporal writer value
             | NumericType n -> serializeNumeric writer n
             | :? double as d when Double.IsNaN d || Double.IsInfinity d -> serializeSpecialFloat writer d
             | :? float32 as f when Single.IsNaN f || Single.IsInfinity f -> serializeSpecialFloat32 writer f
-            | GraphElement elem -> serializeGraphElement writer elem depth config errorTracker
+            | GraphElement elem -> serializeGraphElement writer ctx depth elem
             | :? DateTime as dt -> serializeDateTime writer dt
             | :? DateTimeOffset as dto -> serializeDateTimeOffset writer dto
             | :? Point as p -> serializePoint writer p
-            | :? (byte[]) as bytes -> serializeBinary writer bytes config
-            | :? Collections.IList as list -> serializeList writer list depth config errorTracker
-            | :? Collections.IDictionary as dict -> serializeMap writer dict depth config errorTracker
+            | :? (byte[]) as bytes -> serializeBinary writer bytes ctx.Config
+            | :? Collections.IList as list -> serializeList writer ctx depth list
+            | :? Collections.IDictionary as dict -> serializeMap writer ctx depth dict
             | _ -> writeUnknownType writer value
         with ex ->
             handleSerializationError writer ex depth
 
 /// Initialize circular dependencies after serializeValue is defined
 do
-    SerializationCollections.serializeValueFunc <- Some serializeValue
+    SerializationCollections.serializeValueFunc <-
+        Some(fun writer ctx depth value -> serializeValue writer ctx depth value)
 
-    SerializationGraphElements.serializePathFunc <- Some serializePath
+    SerializationGraphElements.serializePathFunc <- Some(fun writer ctx path -> serializePath writer ctx path)
 
 /// Re-export main functions for use in Export.fs
 let writeNode =

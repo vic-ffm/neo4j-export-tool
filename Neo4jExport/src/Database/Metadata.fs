@@ -46,17 +46,15 @@ module Metadata =
         | DataMissing dataType -> sprintf "missing_%s" dataType
         | JsonSerializationFailure(dataType, _) -> sprintf "json_%s" dataType
 
-    let private collectDatabaseInfo (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) =
+    // New parameter-reduced functions for Phase 10
+    let private collectDatabaseInfo (queryExecutors: Neo4j.QueryExecutors) =
         async {
             let info = Dictionary<string, JsonValue>()
             let mutable warnings = []
 
             try
                 let! result =
-                    Neo4j.executeQueryList
-                        session
-                        breaker
-                        config
+                    queryExecutors.ListQuery
                         "CALL dbms.components() YIELD name, versions, edition WHERE name = 'Neo4j Kernel' RETURN versions[0] as version, edition"
                         (fun record -> record.["version"].As<string>(), record.["edition"].As<string>())
                         1
@@ -87,10 +85,7 @@ module Metadata =
 
             try
                 let! dbNameResult =
-                    Neo4j.executeQueryList
-                        session
-                        breaker
-                        config
+                    queryExecutors.ListQuery
                         "CALL db.info() YIELD name RETURN name"
                         (fun record -> record.["name"].As<string>())
                         1
@@ -118,7 +113,7 @@ module Metadata =
             return Ok(info :> IDictionary<string, JsonValue>), warnings
         }
 
-    let private collectStatistics (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) =
+    let private collectStatistics (queryExecutors: Neo4j.QueryExecutors) =
         async {
             Log.info "Collecting database statistics..."
             let stats = Dictionary<string, JsonValue>()
@@ -134,10 +129,7 @@ module Metadata =
                 """
 
                 let! result =
-                    Neo4j.executeQueryList
-                        session
-                        breaker
-                        config
+                    queryExecutors.ListQuery
                         query
                         (fun record -> record.["nodeCount"].As<int64>(), record.["relCount"].As<int64>())
                         1
@@ -172,9 +164,9 @@ module Metadata =
             return Ok(stats :> IDictionary<string, JsonValue>), warnings
         }
 
-    let private collectSchema (session: SafeSession) (breaker: Neo4j.CircuitBreaker) (config: ExportConfig) =
+    let private collectSchema (queryExecutors: Neo4j.QueryExecutors) (skipSchemaCollection: bool) =
         async {
-            if config.SkipSchemaCollection then
+            if skipSchemaCollection then
                 Log.info "Skipping schema collection (disabled by configuration)"
                 return Ok(dict []), []
             else
@@ -198,10 +190,7 @@ module Metadata =
 
                 try
                     let! result =
-                        Neo4j.executeQueryList
-                            session
-                            breaker
-                            config
+                        queryExecutors.ListQuery
                             "CALL db.labels() YIELD label RETURN collect(label) as labels"
                             (fun record -> record.["labels"].As<List<obj>>())
                             1
@@ -222,10 +211,7 @@ module Metadata =
 
                 try
                     let! result =
-                        Neo4j.executeQueryList
-                            session
-                            breaker
-                            config
+                        queryExecutors.ListQuery
                             "CALL db.relationshipTypes() YIELD relationshipType RETURN collect(relationshipType) as types"
                             (fun record -> record.["types"].As<List<obj>>())
                             1
@@ -247,8 +233,31 @@ module Metadata =
                 return Ok(schema :> IDictionary<string, JsonValue>), warnings
         }
 
+    // Add version parsing function
+    let parseNeo4jVersion (versionString: string) : Neo4jVersion =
+        match versionString with
+        | null
+        | "" -> Unknown
+        | v when v.StartsWith("4.4") -> V4x
+        | v when v.StartsWith("4.") && not (v.StartsWith("4.4")) -> Unknown // Other 4.x not supported
+        | v when v.StartsWith("5.") -> V5x
+        | v when v.StartsWith("6.") -> V6x
+        | _ -> Unknown
+
+    // Add helper to extract major.minor version
+    let extractVersionComponents (versionString: string) : (int * int) option =
+        match versionString.Split('.') with
+        | parts when parts.Length >= 2 ->
+            match Int32.TryParse(parts.[0]), Int32.TryParse(parts.[1]) with
+            | (true, major), (true, minor) -> Some(major, minor)
+            | _ -> None
+        | _ -> None
+
     /// Deduplicate and flush warnings to ErrorTracker
-    let private deduplicateAndFlush (warnings: MetadataWarning list) (errorTracker: ErrorTracking.ErrorTracker) =
+    let private deduplicateAndFlush
+        (warnings: MetadataWarning list)
+        (errorFuncs: ErrorTracking.ErrorTrackingFunctions)
+        =
         warnings
         |> List.groupBy warningKey
         |> List.map (fun (_, group) ->
@@ -270,56 +279,22 @@ module Metadata =
         |> List.choose id
         |> List.iter (fun msg ->
             Log.warn msg
-            errorTracker.AddWarning(msg))
+            errorFuncs.TrackWarning msg None None)
 
-    let enhanceWithManifest
-        (metadata: FullMetadata)
-        (labelStatsTracker: LabelStatsTracker.Tracker)
-        (exportDuration: float)
-        =
-        let manifestDetails =
-            { TotalExportDurationSeconds = exportDuration
-              FileStatistics =
-                LabelStatsTracker.finalizeAndGetAllStats labelStatsTracker
-                |> List.sortBy (fun s -> s.Label) }
-
-        { metadata with
-            ExportManifest = Some manifestDetails }
-
-    let addErrorSummary (metadata: FullMetadata) (errorTracker: ErrorTracking.ErrorTracker) : FullMetadata =
-        let errorSummary =
-            { ErrorCount = errorTracker.GetErrorCount()
-              WarningCount = errorTracker.GetWarningCount()
-              HasErrors = errorTracker.HasErrors() }
-
-        { metadata with
-            ErrorSummary = Some errorSummary }
-
-    let addFormatInfo (metadata: FullMetadata) (lineState: LineTrackingState) : FullMetadata =
-        let formatInfo =
-            { Type = "jsonl"; MetadataLine = 1 }
-
-        let updatedExportMetadata =
-            { metadata.ExportMetadata with
-                Format = Some formatInfo }
-
-        { metadata with
-            ExportMetadata = updatedExportMetadata }
-
+    /// New public collect function with reduced parameters
     let collect
-        (context: ApplicationContext)
-        (session: SafeSession)
-        (breaker: Neo4j.CircuitBreaker)
+        (appContext: ApplicationContext)
+        (queryExecutors: Neo4j.QueryExecutors)
+        (errorContext: ErrorContext)
         (config: ExportConfig)
-        (errorTracker: ErrorTracking.ErrorTracker)
         =
         async {
             Log.info "Collecting metadata..."
 
             // Collect with warnings
-            let! dbInfoResult = collectDatabaseInfo session breaker config
-            let! statsResult = collectStatistics session breaker config
-            let! schemaResult = collectSchema session breaker config
+            let! dbInfoResult = collectDatabaseInfo queryExecutors
+            let! statsResult = collectStatistics queryExecutors
+            let! schemaResult = collectSchema queryExecutors config.SkipSchemaCollection
 
             // Extract results and warnings
             let dbInfo, dbWarnings = dbInfoResult
@@ -334,7 +309,7 @@ module Metadata =
                 |> List.concat
 
             // Single deduplication and flush
-            deduplicateAndFlush allWarnings errorTracker
+            deduplicateAndFlush allWarnings errorContext.Funcs
 
             match dbInfo, stats, schema with
             | Ok db, Ok st, Ok sc ->
@@ -353,7 +328,7 @@ module Metadata =
                     st.["relTypeCount"] <- JNumber 0M
 
                 let! scriptChecksum =
-                    Utils.getScriptChecksum (AppContext.getCancellationToken context)
+                    Utils.getScriptChecksum (AppContext.getCancellationToken appContext)
                     |> Async.AwaitTask
 
                 let exportScript =
@@ -373,23 +348,26 @@ module Metadata =
                       ExpectedRatio = Some 0.3
                       Suffix = ".jsonl.zst" }
 
-                let metadata =
+                // Extract version string for parsing
+                let versionString =
+                    match db.TryGetValue("version") with
+                    | true, value ->
+                        match JsonHelpers.tryGetString value with
+                        | Ok s -> s
+                        | Error _ -> "unknown"
+                    | _ -> "unknown"
+
+                let fullMetadata =
                     { FormatVersion = FORMAT_VERSION
                       ExportMetadata =
-                        { ExportId = Guid.NewGuid()
+                        { ExportId = errorContext.ExportId // Use the exportId from context
                           ExportTimestampUtc = DateTime.UtcNow
                           ExportMode = "native_driver_streaming"
                           Format = None }
                       Producer = exportScript
                       SourceSystem =
                         { Type = "neo4j"
-                          Version =
-                            match db.TryGetValue("version") with
-                            | true, value ->
-                                match JsonHelpers.tryGetString value with
-                                | Ok s -> s
-                                | Error _ -> "unknown"
-                            | _ -> "unknown"
+                          Version = versionString
                           Edition =
                             match db.TryGetValue("edition") with
                             | true, value ->
@@ -430,14 +408,54 @@ module Metadata =
                       Reserved =
                         Some
                             { Purpose = "JSONL streaming compatibility - enables single-pass export"
-                              Padding = None } }
+                              Padding = None }
+                      PaginationPerformance = None }
+
+                // Parse version before returning
+                let parsedVersion =
+                    parseNeo4jVersion versionString
 
                 Log.info "Metadata collection completed"
-                return Ok metadata
+                return Ok(fullMetadata, parsedVersion) // Return tuple
             | Error e, _, _ -> return Error e
             | _, Error e, _ -> return Error e
             | _, _, Error e -> return Error e
         }
+
+    let enhanceWithManifest
+        (metadata: FullMetadata)
+        (labelStatsTracker: LabelStatsTracker.Tracker)
+        (exportDuration: float)
+        =
+        let manifestDetails =
+            { TotalExportDurationSeconds = exportDuration
+              FileStatistics =
+                LabelStatsTracker.finalizeAndGetAllStats labelStatsTracker
+                |> List.sortBy (fun s -> s.Label) }
+
+        { metadata with
+            ExportManifest = Some manifestDetails }
+
+    let addErrorSummary (metadata: FullMetadata) (errorFuncs: ErrorTracking.ErrorTrackingFunctions) : FullMetadata =
+        let errorSummary =
+            { ErrorCount = errorFuncs.Queries.GetErrorCount()
+              WarningCount = errorFuncs.Queries.GetWarningCount()
+              HasErrors = errorFuncs.Queries.HasErrors() }
+
+        { metadata with
+            ErrorSummary = Some errorSummary }
+
+    let addFormatInfo (metadata: FullMetadata) (lineState: LineTrackingState) : FullMetadata =
+        let formatInfo =
+            { Type = "jsonl"; MetadataLine = 1 }
+
+        let updatedExportMetadata =
+            { metadata.ExportMetadata with
+                Format = Some formatInfo }
+
+        { metadata with
+            ExportMetadata = updatedExportMetadata }
+
 
 
     /// Estimates maximum metadata size for placeholder allocation

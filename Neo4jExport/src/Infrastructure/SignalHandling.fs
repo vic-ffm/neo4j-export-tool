@@ -80,7 +80,7 @@ module SignalHandling =
                                     AppContext.cancel context)
 
                         let registration =
-                            createMethod.Invoke(null, [| sigterm; box handler |])
+                            createMethod.Invoke(null, [| sigterm; handler |])
 
                         Log.debug "SIGTERM handler registered via reflection"
 

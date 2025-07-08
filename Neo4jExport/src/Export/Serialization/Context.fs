@@ -27,13 +27,12 @@ open System.Text.Json
 open System.Collections.Generic
 open Neo4jExport
 open Neo4jExport.ExportTypes
-open Neo4jExport.ExportUtils
 open JsonHelpers
 open ErrorTracking
 
-let createWriterContext config errorTracker exportId =
+let createWriterContext config errorFuncs exportId =
     { Config = config
-      ErrorTracker = errorTracker
+      ErrorFuncs = errorFuncs
       ExportId = exportId }
 
 let determineNestedLevel (depth: SerializationDepth) (config: ExportConfig) : NestedSerializationLevel =
@@ -51,12 +50,6 @@ let determinePathLevel (nodeCount: int) (config: ExportConfig) : PathSerializati
     else
         Full
 
-let writeSerializationError (writer: Utf8JsonWriter) (errorType: string) (context: string) =
-    writer.WriteStartObject()
-    writer.WriteString("_error", "unrecoverable_serialization_failure")
-    writer.WriteString("_error_type", errorType)
-    writer.WriteString("_context", context)
-    writer.WriteEndObject()
 
 let writeDepthExceeded (writer: Utf8JsonWriter) (value: obj) (depth: SerializationDepth) =
     writer.WriteStartObject()
@@ -111,7 +104,7 @@ let createErrorContext (elementId: string option) (additionalInfo: (string * obj
         None
 
 let trackSerializationError
-    (errorTracker: ErrorTracker)
+    (errorFuncs: ErrorTrackingFunctions)
     (message: string)
     (elementId: string)
     (entityType: string)
@@ -125,7 +118,7 @@ let trackSerializationError
     let details =
         createErrorContext (Some elementId) context
 
-    errorTracker.AddError(message, ?elementId = Some elementId, ?details = details)
+    errorFuncs.TrackError message (Some elementId) details
 
 let handleSerializationError (writer: Utf8JsonWriter) (ex: exn) (depth: SerializationDepth) =
     try
@@ -134,4 +127,7 @@ let handleSerializationError (writer: Utf8JsonWriter) (ex: exn) (depth: Serializ
         writer.WriteString("_at_depth", string (SerializationDepth.value depth))
         writer.WriteEndObject()
     with _ ->
-        writeSerializationError writer "catastrophic" (sprintf "depth_%d" (SerializationDepth.value depth))
+        // If we can't even write the error, write minimal fallback
+        writer.WriteStartObject()
+        writer.WriteString("_error", "catastrophic_serialization_failure")
+        writer.WriteEndObject()

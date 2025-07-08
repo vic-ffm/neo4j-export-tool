@@ -2,6 +2,8 @@
 
 The first line of every JSONL export file contains comprehensive metadata about the export. This metadata provides everything needed to understand and process the exported data. The tool uses ElementIds exclusively for all node and relationship identification, ensuring compatibility with Neo4j 5.x and future Neo4j 6.0 releases.
 
+Starting with version 0.14.0, the tool also generates stable content-based identifiers for nodes and relationships to enable change tracking and data snapshots across exports. See [Neo4JExportToolID.md](./Neo4JExportToolID.md) for detailed specification.
+
 ## Metadata Overview
 
 The metadata is a single JSON object on line 1 that includes:
@@ -41,7 +43,9 @@ Information about the export process:
     "type": "jsonl",
     "metadata_line": 1,
     "node_start_line": 2,
-    "relationship_start_line": 3612
+    "relationship_start_line": 3612,
+    "error_start_line": 8255,
+    "warning_start_line": 8278
   }
 }
 ```
@@ -50,6 +54,8 @@ Information about the export process:
 - **export_timestamp_utc**: ISO 8601 timestamp when export started
 - **export_mode**: The export method (always "native_driver_streaming")
 - **format**: Line numbers for different record types
+  - **error_start_line**: Line where error records begin (if any)
+  - **warning_start_line**: Line where warning records begin (if any)
 
 ### Producer Information
 
@@ -58,8 +64,8 @@ Details about the export tool:
 ```json
 "producer": {
   "name": "neo4j-export.dll",
-  "version": "0.10.0",
-  "checksum": "5ae243ccadaed8e35ba398cdb4ce5a573faee84a25c71512812736b6e4a68a0c",
+  "version": "0.14.0",
+  "checksum": "018e11745ef7fb58e6d6e5a6af438f5f58ef2131e87b90e5ebe4be5bff57c305",
   "runtime_version": "9.0.6"
 }
 ```
@@ -294,6 +300,7 @@ The `compression` section helps choose optimal storage strategies for the export
 {
   "type": "node",
   "element_id": "4:68c06cde-1611-4b8e-a003-616fb97012a3:0",
+  "NET_node_content_hash": "a7b9c2d4e6f8901234567890abcdef1234567890abcdef1234567890abcdef12",
   "export_id": "550e8400-e29b-41d4-a716-446655440000",
   "labels": ["Person", "Employee"],
   "properties": {
@@ -310,10 +317,13 @@ The `compression` section helps choose optimal storage strategies for the export
 {
   "type": "relationship",
   "element_id": "5:12345678-abcd-ef01-2345-6789abcdef01:0",
+  "NET_rel_identity_hash": "b8c9d3e5f7a9012345678901bcdef2345678901bcdef2345678901bcdef234567",
   "export_id": "550e8400-e29b-41d4-a716-446655440000",
   "label": "WORKS_FOR",
   "start_element_id": "4:68c06cde-1611-4b8e-a003-616fb97012a3:0",
   "end_element_id": "4:98765432-dcba-10fe-5432-0123456789ab:1",
+  "start_node_content_hash": "a7b9c2d4e6f8901234567890abcdef1234567890abcdef1234567890abcdef12",
+  "end_node_content_hash": "c9d8e5f7a9012345678901bcdef2345678901bcdef2345678901bcdef234567",
   "properties": {
     "since": "2020-01-01",
     "role": "Senior Developer"
@@ -343,6 +353,73 @@ Note: In Neo4j 4.4, ElementIds may appear as simple numeric strings (e.g., "0", 
 - **Neo4j 5.x**: Full ElementId support
 - **Neo4j 6.0**: Ready for when numeric IDs are completely removed
 - **No numeric IDs**: This tool does not export legacy numeric IDs
+
+## Content-Based Identifiers
+
+Starting with version 0.14.0, the export tool generates stable, content-based identifiers:
+
+### For Nodes
+- **NET_node_content_hash**: SHA-256 hash based on labels and properties
+- Changes when node content changes, stays same when content is identical
+- Consistent across Neo4j versions and exports
+
+### For Relationships
+- **NET_rel_identity_hash**: SHA-256 hash based on type, element IDs, and properties
+- **start_node_content_hash**: Content hash of the start node
+- **end_node_content_hash**: Content hash of the end node
+
+These identifiers enable:
+- Change detection between exports
+- Data snapshot comparisons
+- Version-independent content tracking
+
+For full specification and examples, see [Neo4JExportToolID.md](./Neo4JExportToolID.md).
+
+## Error and Warning Records
+
+When errors or warnings occur during export, they are written as special record types:
+
+### Error Record
+```json
+{
+  "type": "error",
+  "timestamp": "2025-07-08T03:08:02.123Z",
+  "message": "Failed to serialize property 'data' for node",
+  "element_id": "4:68c06cde-1611-4b8e-a003-616fb97012a3:0",
+  "details": "Property contains unsupported type"
+}
+```
+
+### Warning Record
+```json
+{
+  "type": "warning",
+  "timestamp": "2025-07-08T03:08:02.456Z",
+  "message": "Skipped temporal property with nanosecond precision",
+  "element_id": "4:68c06cde-1611-4b8e-a003-616fb97012a3:0"
+}
+```
+
+## Performance Tracking
+
+The export tool tracks performance metrics for each pagination strategy:
+
+### Export Manifest
+Detailed per-label statistics are included in the metadata:
+
+```json
+"export_manifest": {
+  "total_export_duration_seconds": 1.367092,
+  "file_statistics": [
+    {
+      "label": "Person",
+      "record_count": 7,
+      "bytes_written": 1736,
+      "export_duration_ms": 99
+    }
+  ]
+}
+```
 
 ## Reserved Fields
 

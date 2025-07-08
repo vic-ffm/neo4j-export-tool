@@ -86,11 +86,13 @@ llm-generated*
 
 # Working Docs (markdown files)
 *.md
-/neo4j-docs/
+/neo4j-docs/*
+/tmpdocs/*
+!/docs/*
 !README.md
-!VERSIONING.md
-!Metadata.md
-!Types.md
+
+# Test Neo4J Docker Container Setup
+/neo4j-docker/*
 
 #Single File Outputs
 concatenated_fsharp_files.txt

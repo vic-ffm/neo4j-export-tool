@@ -15,15 +15,15 @@ fi
 
 echo "Updating version to $NEW_VERSION..."
 
-echo "$NEW_VERSION" > .version
+echo "$NEW_VERSION" > ../.version
 
-sed -i.bak "s|<Version>.*</Version>|<Version>$NEW_VERSION</Version>|g" Directory.Build.props
-sed -i.bak "s|<AssemblyVersion>.*</AssemblyVersion>|<AssemblyVersion>$NEW_VERSION.0</AssemblyVersion>|g" Directory.Build.props
-sed -i.bak "s|<FileVersion>.*</FileVersion>|<FileVersion>$NEW_VERSION.0</FileVersion>|g" Directory.Build.props
-rm Directory.Build.props.bak
+sed -i.bak "s|<Version>.*</Version>|<Version>$NEW_VERSION</Version>|g" ../Directory.Build.props
+sed -i.bak "s|<AssemblyVersion>.*</AssemblyVersion>|<AssemblyVersion>$NEW_VERSION.0</AssemblyVersion>|g" ../Directory.Build.props
+sed -i.bak "s|<FileVersion>.*</FileVersion>|<FileVersion>$NEW_VERSION.0</FileVersion>|g" ../Directory.Build.props
+rm ../Directory.Build.props.bak
 
-sed -i.bak "s|Version [0-9]\+\.[0-9]\+\.[0-9]\+|Version $NEW_VERSION|g" README.md
-rm README.md.bak
+sed -i.bak "s|Version [0-9]\+\.[0-9]\+\.[0-9]\+|Version $NEW_VERSION|g" ../README.md
+rm ../README.md.bak
 
 echo "✓ Version updated to $NEW_VERSION"
 echo ""

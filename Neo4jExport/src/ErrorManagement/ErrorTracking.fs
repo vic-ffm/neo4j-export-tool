@@ -27,7 +27,7 @@ open System.Collections.Generic
 open Neo4jExport
 
 /// Thread-safe error tracking using F# agents
-type ErrorTracker() =
+type internal ErrorTracker() =
     let agent =
         MailboxProcessor.Start(fun inbox ->
             let rec loop (state: ErrorTrackingState) =
@@ -46,6 +46,8 @@ type ErrorTracker() =
 
                         reply.Reply()
 
+                        // MailboxProcessor guarantees the entire message handler completes atomically
+                        // before processing the next message, ensuring state updates are visible
                         return!
                             loop
                                 { state with
@@ -86,7 +88,18 @@ type ErrorTracker() =
                 { Errors = []
                   ErrorCount = 0L
                   WarningCount = 0L
-                  CurrentLine = 1L })
+                  // IMPORTANT: Line tracking off-by-one fix
+                  // This starts at 2L because line 1 of the output file contains metadata.
+                  // The first data record (node/relationship) appears on line 2.
+                  //
+                  // LIMITATION: This is a pragmatic fix for a deeper architectural issue.
+                  // Both LineTrackingState and ErrorTrackingState maintain separate line counters
+                  // that must stay synchronized.
+                  // TODO: The proper solution would be to pass line numbers
+                  // explicitly to error tracking functions, eliminating duplicate state.
+                  //
+
+                  CurrentLine = 2L })
 
     member _.AddError(message, ?elementId, ?details) =
         agent.PostAndReply(fun ch -> AddError(message, elementId, details, ch))
@@ -114,3 +127,79 @@ type ErrorTracker() =
 
     interface IDisposable with
         member _.Dispose() = (agent :> IDisposable).Dispose()
+
+/// Error tracking functions providing controlled access to error management operations.
+///
+/// DESIGN RATIONALE:
+/// This type encapsulates all error tracking operations to enable making ErrorTracker internal.
+/// The design groups queries separately from commands to document the command-query separation,
+/// though it still violates pure CQS principles by mixing both in one type.
+///
+/// DESIGN NOTES:
+/// - IncrementLine is part of error tracking because errors need line numbers for debugging
+/// - Line tracking here is for error correlation, not export progress (see LineTrackingState for that)
+/// - The apparent "conflation" of concerns is actually cohesive design
+/// - This design correctly groups operations that are used together
+type ErrorTrackingFunctions =
+    { // Commands (mutations)
+      TrackError: string -> string option -> IDictionary<string, JsonValue> option -> unit
+      TrackWarning: string -> string option -> IDictionary<string, JsonValue> option -> unit
+      IncrementLine: unit -> unit
+      // Queries (reads) - grouped for clarity
+      Queries:
+          {| GetErrors: unit -> ErrorRecord list
+             GetErrorCount: unit -> int64
+             GetWarningCount: unit -> int64
+             HasErrors: unit -> bool |}
+      // Disposal
+      Dispose: unit -> unit }
+
+/// Creates error tracking functions that encapsulate an ErrorTracker instance.
+/// This factory function is the bridge between the internal ErrorTracker implementation
+/// and the public ErrorTrackingFunctions interface.
+///
+/// PERFORMANCE NOTE:
+/// The function indirection here has negligible overhead as these operations are not
+/// in the hot path of record serialization. The actual performance-critical path is
+/// the streaming serialization of nodes/relationships, not error tracking.
+let internal createErrorTracker (exportId: Guid) (errorTracker: ErrorTracker) =
+    { TrackError =
+        fun message elementId details -> errorTracker.AddError(message, ?elementId = elementId, ?details = details)
+      TrackWarning =
+        fun message elementId details -> errorTracker.AddWarning(message, ?elementId = elementId, ?details = details)
+      IncrementLine = fun () -> errorTracker.IncrementLine()
+      Queries =
+        {| GetErrors = fun () -> errorTracker.GetErrors()
+           GetErrorCount = fun () -> errorTracker.GetErrorCount()
+           GetWarningCount = fun () -> errorTracker.GetWarningCount()
+           HasErrors = fun () -> errorTracker.HasErrors() |}
+      Dispose = fun () -> (errorTracker :> IDisposable).Dispose() }
+
+/// Creates a complete error tracking system with proper encapsulation.
+/// Returns ErrorTrackingFunctions that internally manages an ErrorTracker instance.
+/// The returned functions handle disposal of the underlying ErrorTracker.
+///
+/// This is the primary factory function that should be used to create error tracking.
+/// It encapsulates the ErrorTracker instance completely, allowing ErrorTracker to be
+/// made internal without exposing it to external modules.
+let createErrorTrackingSystem (exportId: Guid) : ErrorTrackingFunctions =
+    let errorTracker = new ErrorTracker()
+    createErrorTracker exportId errorTracker
+
+/// Helper functions to provide cleaner APIs when only a subset of operations is needed
+module ErrorTrackingHelpers =
+    /// Extract command operations (error/warning tracking and line increment)
+    /// Useful for modules that track errors but don't query them
+    let getCommands (funcs: ErrorTrackingFunctions) =
+        {| TrackError = funcs.TrackError
+           TrackWarning = funcs.TrackWarning
+           IncrementLine = funcs.IncrementLine |}
+
+    /// Extract only query operations for reporting modules
+    let getQueries (funcs: ErrorTrackingFunctions) = funcs.Queries
+
+    /// Extract only error/warning tracking (no line tracking)
+    /// Rarely used since most error tracking needs line correlation
+    let getErrorReporter (funcs: ErrorTrackingFunctions) =
+        {| TrackError = funcs.TrackError
+           TrackWarning = funcs.TrackWarning |}

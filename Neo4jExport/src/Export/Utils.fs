@@ -24,9 +24,9 @@ module Neo4jExport.ExportUtils
 
 open System
 open System.Text
-open System.Buffers
 open System.Runtime.CompilerServices
 open System.Collections.Generic
+open Neo4jExport
 open Neo4jExport.ExportTypes
 
 module StringOps =
@@ -36,40 +36,6 @@ module StringOps =
             span.ToString()
         else
             String.Concat(span.Slice(0, maxLen - 3).ToString(), "...")
-
-    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
-    let isNullOrWhiteSpace (s: string) = String.IsNullOrWhiteSpace(s)
-
-module BufferPool =
-    let private pool = ArrayPool<byte>.Shared
-
-    [<Struct>]
-    type PooledBuffer =
-        { Buffer: byte[]
-          Length: int }
-
-        interface IDisposable with
-            member this.Dispose() =
-                pool.Return(this.Buffer, clearArray = true)
-
-    let rent minLength =
-        let buffer = pool.Rent(minLength)
-
-        { Buffer = buffer
-          Length = buffer.Length }
-
-module VOpt =
-    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
-    let inline ofOption opt =
-        match opt with
-        | Some v -> ValueSome v
-        | None -> ValueNone
-
-    [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
-    let inline defaultValue def vopt =
-        match vopt with
-        | ValueSome v -> v
-        | ValueNone -> def
 
 let computeSha256 (data: byte[]) =
     use sha256 =
@@ -103,13 +69,6 @@ let ensureUniqueKey (key: string) (tracker: HashSet<string>) =
 
         findUniqueKey 1
 
-
-[<MethodImpl(MethodImplOptions.AggressiveInlining)>]
-let validateDepth currentDepth maxDepth =
-    if currentDepth >= maxDepth then
-        ValueSome(DepthExceeded(currentDepth, maxDepth))
-    else
-        ValueNone
 
 let validateLabel (label: string) (elementId: string) =
     match label with

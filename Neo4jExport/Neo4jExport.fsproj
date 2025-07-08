@@ -27,6 +27,8 @@
     <!-- Order matters in F# - files are compiled in the order listed -->
     <Compile Include="src/ErrorManagement/NonEmptyList.fs" />
     <Compile Include="src/Core/Types.fs" />
+    <Compile Include="src/Core/CancellationOperations.fs" />
+    <Compile Include="src/Core/TempFileOperations.fs" />
     <Compile Include="src/Core/RecordTypes.fs" />
     <Compile Include="src/ErrorManagement/ErrorTracking.fs" />
     <Compile Include="src/Json/JsonHelpers.fs" />
@@ -37,6 +39,11 @@
     <Compile Include="src/Workflow/LabelStatsTracker.fs" />
     <Compile Include="src/Configuration/Security.fs" />
     <Compile Include="src/Utils.fs" />
+    <Compile Include="src/Core/ProgressOperations.fs" />
+    <Compile Include="src/Core/Capabilities.fs" />
+    <Compile Include="src/Core/ContextTypes.fs" />
+    <Compile Include="src/Configuration/ValidationHelpers.fs" />
+    <Compile Include="src/Configuration/FieldValidators.fs" />
     <Compile Include="src/Configuration/Configuration.fs" />
     <Compile Include="src/Json/JsonConfig.fs" />
     <Compile Include="src/Workflow/MetadataWriter.fs" />
@@ -48,6 +55,7 @@
     <!-- Export module hierarchy -->
     <Compile Include="src/Export/Types.fs" />
     <Compile Include="src/Export/Utils.fs" />
+    <Compile Include="src/Export/Neo4jExportToolId.fs" />
     <Compile Include="src/Export/Serialization/Context.fs" />
     <Compile Include="src/Export/Serialization/Primitives.fs" />
     <Compile Include="src/Export/Serialization/Temporal.fs" />

@@ -300,6 +300,29 @@ type FileLevelStatistics =
       [<JsonPropertyName("export_duration_ms")>]
       ExportDurationMs: int64 }
 
+/// Batch timing sample for trend analysis
+[<Struct>]
+type BatchTimingSample =
+    { BatchNumber: int
+      TimeMs: float }
+
+/// Pagination performance metrics
+type PaginationPerformance =
+    { [<JsonPropertyName("strategy")>]
+      Strategy: string  // "keyset" or "skip_limit"
+      [<JsonPropertyName("total_batches")>]
+      TotalBatches: int
+      [<JsonPropertyName("average_batch_time_ms")>]
+      AverageBatchTimeMs: float
+      [<JsonPropertyName("first_batch_time_ms")>]
+      FirstBatchTimeMs: float
+      [<JsonPropertyName("last_batch_time_ms")>]
+      LastBatchTimeMs: float
+      [<JsonPropertyName("performance_trend")>]
+      PerformanceTrend: string  // "constant", "linear", "exponential"
+      [<JsonPropertyName("sample_timings")>]
+      SampleTimings: BatchTimingSample list }  // Samples every 10 batches
+
 type ExportManifestDetails =
     { [<JsonPropertyName("total_export_duration_seconds")>]
       TotalExportDurationSeconds: float
@@ -448,4 +471,14 @@ type FullMetadata =
       [<JsonPropertyName("compression")>]
       Compression: CompressionHints
       [<JsonPropertyName("_reserved")>]
-      Reserved: ReservedMetadata option }
+      Reserved: ReservedMetadata option
+      [<JsonPropertyName("pagination_performance")>]
+      PaginationPerformance: PaginationPerformance option }
+
+// Add version type for Neo4j compatibility
+[<Struct>]
+type Neo4jVersion =
+    | V4x // Neo4j 4.4.x - uses id() function
+    | V5x // Neo4j 5.x - uses elementId() function
+    | V6x // Neo4j 6.x+ - uses elementId() function
+    | Unknown

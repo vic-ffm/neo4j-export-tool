@@ -1,6 +1,6 @@
 # Neo4j Export Tool - Data Type Support
 
-The following data types are supported. 
+The following data types are supported.
 
 ## Core Primitive Types
 
@@ -101,7 +101,9 @@ The following data types are supported.
 
 ## Temporal Types
 
-All temporal types are serialised using their string representation:
+All temporal types are serialised using their string representation.
+
+**Note**: Neo4j stores temporal values with nanosecond precision, but .NET supports only 100-nanosecond precision. Values are automatically truncated to the nearest 100 nanoseconds during export.
 
 ### Date
 - **Neo4j Type**: `Date`
@@ -109,19 +111,22 @@ All temporal types are serialised using their string representation:
 
 ### Time
 - **Neo4j Type**: `Time` (with timezone offset)
-- **Example**: `"14:30:15+02:00"`
+- **Example**: `"14:30:15.123456700+02:00"`
 
 ### LocalTime
 - **Neo4j Type**: `LocalTime` (no timezone)
-- **Example**: `"14:30:15"`
+- **Example**: `"14:30:15.123456700"`
 
-### DateTime
+### DateTime (ZonedDateTime)
 - **Neo4j Type**: `DateTime` (with timezone)
-- **Example**: `"2024-01-15T14:30:15+02:00[Europe/Berlin]"`
+- **Examples**:
+  - With named timezone: `"2024-01-15T14:30:15.123456700+02:00[Europe/Berlin]"`
+  - With offset only: `"2024-01-15T14:30:15.123456700+02:00"`
+- **Note**: Preserves both UTC offset and timezone name when available
 
 ### LocalDateTime
 - **Neo4j Type**: `LocalDateTime` (no timezone)
-- **Example**: `"2024-01-15T14:30:15"`
+- **Example**: `"2024-01-15T14:30:15.123456700"`
 
 ### Duration
 - **Neo4j Type**: `Duration`

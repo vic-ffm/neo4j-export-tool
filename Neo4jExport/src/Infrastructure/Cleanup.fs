@@ -26,8 +26,6 @@ open System.IO
 open System.Diagnostics
 
 module Cleanup =
-    let registerTempFile (context: ApplicationContext) (path: string) = AppContext.addTempFile context path
-
     let performCleanup (context: ApplicationContext) (reason: string) =
         Log.info (sprintf "Performing cleanup: %s" reason)
 

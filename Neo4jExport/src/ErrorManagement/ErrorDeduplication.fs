@@ -51,7 +51,7 @@ let inline generateErrorKey (ex: exn) : ErrorKey =
       MessagePrefixHash = messagePrefix.GetHashCode(StringComparison.Ordinal) }
 
 /// Pure function to generate key from error details
-let inline generateErrorKeyFromDetails (exceptionType: string) (message: string) : ErrorKey =
+let inline private generateErrorKeyFromDetails (exceptionType: string) (message: string) : ErrorKey =
     let messagePrefix =
         if message.Length > 100 then
             message.Substring(0, 100)
@@ -78,7 +78,7 @@ let createErrorStatistics (firstIndex: int64) (firstElementId: string) : ErrorSt
     stats
 
 /// Update statistics with new occurrence (pure calculation of what to update)
-let inline shouldAddSample (stats: ErrorStatistics) : bool =
+let inline private shouldAddSample (stats: ErrorStatistics) : bool =
     stats.SampleCount < stats.SampleElementIds.Length
 
 // --- Batch Error Accumulator ---
@@ -132,7 +132,7 @@ let clearAccumulator (accumulator: BatchErrorAccumulator) =
 // --- Formatting Functions (Pure) ---
 
 /// Format error message with deduplication statistics
-let formatDedupedError (info: ErrorInfo) (stats: ErrorStatistics) (batchSize: int64) : string =
+let private formatDedupedError (info: ErrorInfo) (stats: ErrorStatistics) (batchSize: int64) : string =
     let percentage =
         if batchSize > 0L then
             (float stats.Count / float batchSize) * 100.0
@@ -153,7 +153,7 @@ let formatDedupedError (info: ErrorInfo) (stats: ErrorStatistics) (batchSize: in
         samples
 
 /// Create error details for ErrorTracker
-let createErrorDetails (info: ErrorInfo) (stats: ErrorStatistics) : IDictionary<string, JsonValue> option =
+let private createErrorDetails (info: ErrorInfo) (stats: ErrorStatistics) : IDictionary<string, JsonValue> option =
     let details =
         Dictionary<string, JsonValue>()
 
@@ -177,7 +177,7 @@ let createErrorDetails (info: ErrorInfo) (stats: ErrorStatistics) : IDictionary<
 // --- Flush Operations ---
 
 /// Flush accumulated errors to ErrorTracker
-let flushErrors (accumulator: BatchErrorAccumulator) (errorTracker: ErrorTracker) (batchSize: int64) =
+let flushErrors (accumulator: BatchErrorAccumulator) (errorFuncs: ErrorTrackingFunctions) (batchSize: int64) =
 
     // Fast path: no errors
     if accumulator.Errors.Count = 0 then
@@ -197,7 +197,7 @@ let flushErrors (accumulator: BatchErrorAccumulator) (errorTracker: ErrorTracker
                 else
                     None
 
-            errorTracker.AddError(message, ?elementId = primaryElementId, ?details = details)
+            errorFuncs.TrackError message primaryElementId details
 
 // --- Integration Helper ---
 

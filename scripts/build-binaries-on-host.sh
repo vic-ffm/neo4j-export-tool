@@ -51,9 +51,9 @@ fi
 echo "Building for platform: $RID"
 echo "Output binary: dist/$OUTPUT_NAME"
 
-mkdir -p dist
+mkdir -p ../dist
 
-dotnet publish Neo4jExport/Neo4jExport.fsproj \
+dotnet publish ../Neo4jExport/Neo4jExport.fsproj \
     -c Release \
     -r "$RID" \
     --self-contained true \
@@ -61,15 +61,15 @@ dotnet publish Neo4jExport/Neo4jExport.fsproj \
     -p:IncludeNativeLibrariesForSelfExtract=true \
     -p:EnableCompressionInSingleFile=true \
     -p:DebugType=embedded \
-    -o ./publish-temp
+    -o ../publish-temp
 
-mv "./publish-temp/$BINARY_NAME" "./dist/$OUTPUT_NAME"
+mv "../publish-temp/$BINARY_NAME" "../dist/$OUTPUT_NAME"
 
-rm -rf ./publish-temp
+rm -rf ../publish-temp
 
 if [ "$OS_NAME" != "windows" ]; then
-    chmod +x "./dist/$OUTPUT_NAME"
+    chmod +x "../dist/$OUTPUT_NAME"
 fi
 
 echo "✓ Build complete: dist/$OUTPUT_NAME"
-ls -lh "dist/$OUTPUT_NAME"
+ls -lh "../dist/$OUTPUT_NAME"
