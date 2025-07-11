@@ -185,21 +185,8 @@ let processNodeRecord (exportState: ExportState) (recordCtx: RecordContext<Batch
         
         exportState.NodeIdMapping.TryAdd(elementId, stableId) |> ignore
         
-        writeNode writer { new INode with
-                            member _.ElementId = elementId
-                            member _.Labels = labels :> IReadOnlyList<string>
-                            member _.Properties = properties
-                            member _.Item with get(key: string) = properties.[key]
-                            member _.Get<'T>(key: string) : 'T = properties.[key] :?> 'T
-                            member _.TryGet<'T>(key: string, [<System.Runtime.InteropServices.Out>] value: byref<'T>) = 
-                                let success, v = properties.TryGetValue(key)
-                                if success && v :? 'T then
-                                    value <- unbox<'T> v
-                                    true
-                                else
-                                    false
-                            member _.Id = 0L  // Not used, but required by interface
-                            member _.Equals(other: INode) = false } elementId stableId ctx
+        // Use direct serialization to avoid object allocation in hot path
+        writeNodeDirect writer elementId stableId (labels :> IReadOnlyList<string>) properties ctx
     with ex ->
         let elementId = ""
 
@@ -310,25 +297,8 @@ let processRelationshipRecord
               EndElementId = endNodeId
               EndStableId = endStableId }  // End node content hash
 
-        writeRelationship writer { new IRelationship with
-                                     member _.ElementId = elementId
-                                     member _.Type = relType
-                                     member _.StartNodeElementId = startNodeId
-                                     member _.EndNodeElementId = endNodeId
-                                     member _.Properties = properties
-                                     member _.Item with get(key: string) = properties.[key]
-                                     member _.Get<'T>(key: string) : 'T = properties.[key] :?> 'T
-                                     member _.TryGet<'T>(key: string, [<System.Runtime.InteropServices.Out>] value: byref<'T>) = 
-                                         let success, v = properties.TryGetValue(key)
-                                         if success && v :? 'T then
-                                             value <- unbox<'T> v
-                                             true
-                                         else
-                                             false
-                                     member _.Id = 0L  // Not used, but required by interface
-                                     member _.StartNodeId = 0L  // Not used, but required by interface
-                                     member _.EndNodeId = 0L    // Not used, but required by interface
-                                     member _.Equals(other: IRelationship) = false } ids ctx
+        // Use direct serialization to avoid object allocation in hot path
+        writeRelationshipDirect writer relType properties ids ctx
     with ex ->
         // Failed to parse relationship from record
         trackSerializationErrorDedup recordCtx.ErrorAccumulator ex "" "relationship" "RecordAccessError"
@@ -383,19 +353,19 @@ module private KeysetPagination =
     /// Extract ID from record for pagination
     let extractId (version: Neo4jVersion) (entityType: string) (record: IRecord) : KeysetId option =
         try
-            let fieldName =
-                match entityType with
-                | "Nodes" -> "nodeId"
-                | "Relationships" -> "relId"
-                | _ -> failwithf "Unknown entity type: %s" entityType
-
             match version with
             | V4x ->
+                // Neo4j 4.x uses different field names for nodes and relationships
+                let fieldName =
+                    match entityType with
+                    | "Nodes" -> "nodeId"
+                    | "Relationships" -> "relId"
+                    | _ -> failwithf "Unknown entity type: %s" entityType
                 let id = record.[fieldName].As<int64>()
                 Some(NumericId id)
-            | V5x
-            | V6x ->
-                let id = record.[fieldName].As<string>()
+            | V5x | V6x ->
+                // Neo4j 5.x+ uses elementId for both nodes and relationships
+                let id = record.["elementId"].As<string>()
                 Some(ElementId id)
             | Unknown -> None
         with ex ->
@@ -629,7 +599,16 @@ let processBatchedQuery<'state>
 
                             // Continue if we got a full batch
                             if recordCount = batchSize then
-                                return! processBatch batchStats newLastProgress nextPaginationState currentHandlerState
+                                // Critical check: Prevent infinite loop when using keyset pagination
+                                match paginationState, nextPaginationState with
+                                | Keyset(prevId, _), Keyset(nextId, _) when prevId = nextId ->
+                                    // We processed a full batch but couldn't advance the pagination cursor
+                                    // This means ID extraction failed for all records in the batch
+                                    return Error(PaginationError(
+                                        batchCtx.Processor.EntityName,
+                                        sprintf "Unable to advance pagination after processing %d records. This typically occurs when the ID field (nodeId/relId) cannot be extracted from query results. Check that your Neo4j query returns the expected fields." recordCount))
+                                | _ ->
+                                    return! processBatch batchStats newLastProgress nextPaginationState currentHandlerState
                             else
                                 return Ok(batchStats, currentHandlerState)
             }

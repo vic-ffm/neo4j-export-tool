@@ -96,6 +96,7 @@ module Workflow =
         | FileSystemError _ -> 3
         | SecurityError _ -> 6
         | TimeoutError _ -> 5
+        | PaginationError _ -> 7  // Same as QueryError - data access issue
         | AggregateError _ -> 6
 
     /// Prepare export file with metadata placeholder

@@ -167,6 +167,7 @@ type AppError =
     | FileSystemError of path: string * message: string * exn: exn option
     | SecurityError of message: string
     | TimeoutError of operation: string * duration: TimeSpan
+    | PaginationError of entityType: string * message: string
     | AggregateError of NonEmptyList<AppError>
 
 /// Mutable context for managing application lifecycle and cleanup

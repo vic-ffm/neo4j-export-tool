@@ -43,7 +43,7 @@ module QueryBuilders =
         | V5x
         | V6x
         | Unknown ->
-            "MATCH (n) RETURN n, labels(n) as labels, elementId(n) as nodeId ORDER BY elementId(n) SKIP $skip LIMIT $limit"
+            "MATCH (n) RETURN n, labels(n) as labels, elementId(n) as elementId ORDER BY elementId(n) SKIP $skip LIMIT $limit"
 
     /// Build node query for future keyset pagination
     let buildNodeQueryKeyset (version: Neo4jVersion) (lastId: KeysetId option) =
@@ -80,8 +80,7 @@ module QueryBuilders =
             RETURN 
                 elementId(n) AS elementId,
                 labels(n) AS labels,
-                n AS node,
-                elementId(n) AS nodeId
+                n AS node
             ORDER BY elementId(n)
             LIMIT $limit
             """ whereClause
@@ -93,7 +92,7 @@ module QueryBuilders =
         | V5x
         | V6x
         | Unknown ->
-            "MATCH ()-[r]->() RETURN r, type(r) as type, elementId(r) as relId ORDER BY elementId(r) SKIP $skip LIMIT $limit"
+            "MATCH ()-[r]->() RETURN r, type(r) as type, elementId(r) as elementId ORDER BY elementId(r) SKIP $skip LIMIT $limit"
 
     /// Build relationship query for future keyset pagination
     let buildRelationshipQueryKeyset (version: Neo4jVersion) (lastId: KeysetId option) =
@@ -134,8 +133,7 @@ module QueryBuilders =
                 type(r) AS type,
                 elementId(startNode) AS startNodeElementId,
                 elementId(endNode) AS endNodeElementId,
-                r AS relationship,
-                elementId(r) AS relId
+                r AS relationship
             ORDER BY elementId(r)
             LIMIT $limit
             """ whereClause
@@ -292,20 +290,23 @@ let exportNodesUnified
                 with _ ->
                     []
 
-            let bytesPerLabel =
-                if List.isEmpty labels then
-                    bytesWritten
-                else
-                    bytesWritten / int64 labels.Length
-
+            // Handle both labeled and unlabeled nodes
             let newLabelTracker =
-                labels
-                |> List.fold
-                    (fun tracker label ->
-                        tracker
-                        |> LabelStatsTracker.startLabel label
-                        |> LabelStatsTracker.updateLabel label 1L bytesPerLabel)
+                if List.isEmpty labels then
+                    // Track unlabeled nodes under a special category
                     state.LabelTracker
+                    |> LabelStatsTracker.startLabel "_unlabeled"
+                    |> LabelStatsTracker.updateLabel "_unlabeled" 1L bytesWritten
+                else
+                    // Distribute bytes evenly among labels
+                    let bytesPerLabel = bytesWritten / int64 labels.Length
+                    labels
+                    |> List.fold
+                        (fun tracker label ->
+                            tracker
+                            |> LabelStatsTracker.startLabel label
+                            |> LabelStatsTracker.updateLabel label 1L bytesPerLabel)
+                        state.LabelTracker
 
             { LineState = newLineState
               LabelTracker = newLabelTracker }

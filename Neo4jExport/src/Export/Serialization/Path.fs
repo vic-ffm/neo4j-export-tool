@@ -32,24 +32,38 @@ open Neo4jExport.SerializationCollections
 open Neo4jExport.JsonHelpers
 open ErrorTracking
 
-let private generatePathSequenceTailRec nodeCount relCount =
-    let rec loop acc nodeIdx relIdx isNode =
-        match nodeIdx < nodeCount, relIdx < relCount, isNode with
-        | true, _, true ->
-            let item =
-                {| Type = "node"; Index = nodeIdx |}
-
-            loop (item :: acc) (nodeIdx + 1) relIdx false
-        | _, true, false ->
-            let item =
-                {| Type = "relationship"
-                   Index = relIdx |}
-
-            loop (item :: acc) nodeIdx (relIdx + 1) true
-        | false, false, _ -> List.rev acc
-        | _ -> loop acc nodeIdx relIdx (not isNode)
-
-    loop [] 0 0 true
+/// Generate the alternating sequence of nodes and relationships for a path
+/// Neo4j paths always follow the pattern: Node -> Relationship -> Node -> ... -> Node
+/// Therefore: relationships = nodes - 1 for valid paths
+let private generatePathSequence nodeCount relCount =
+    // Validate Neo4j path invariant
+    if relCount <> nodeCount - 1 && nodeCount > 0 then
+        // Log warning but continue - defensive against malformed data
+        Log.warn (sprintf "Invalid path structure: %d nodes and %d relationships (expected %d relationships)" 
+                    nodeCount relCount (nodeCount - 1))
+    
+    // Simple approach: generate indices for the alternating pattern
+    // Total elements = nodes + relationships
+    let totalElements = nodeCount + relCount
+    
+    // Handle edge cases
+    if totalElements = 0 then
+        []
+    else
+        [0 .. totalElements - 1]
+        |> List.map (fun i ->
+            if i % 2 = 0 then
+                // Even positions are nodes: 0, 2, 4, ...
+                {| Type = "node"; Index = i / 2 |}
+            else
+                // Odd positions are relationships: 1, 3, 5, ...
+                {| Type = "relationship"; Index = i / 2 |})
+        |> List.filter (fun item ->
+            // Defensive: ensure we don't exceed actual counts
+            match item.Type with
+            | "node" -> item.Index < nodeCount
+            | "relationship" -> item.Index < relCount
+            | _ -> false)
 
 let private serializePathFull (writer: Utf8JsonWriter) (ctx: WriterContext) (path: IPath) =
     writer.WritePropertyName("nodes")
@@ -179,7 +193,7 @@ let serializePath (writer: Utf8JsonWriter) (ctx: WriterContext) (path: IPath) =
         writer.WritePropertyName("sequence")
         writer.WriteStartArray()
 
-        generatePathSequenceTailRec path.Nodes.Count path.Relationships.Count
+        generatePathSequence path.Nodes.Count path.Relationships.Count
         |> List.iter (fun item ->
             writer.WriteStartObject()
             writer.WriteString("type", item.Type)

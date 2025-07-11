@@ -67,6 +67,7 @@ module ErrorAccumulation =
         | MemoryError msg -> msg
         | ExportError(msg, _) -> msg
         | TimeoutError(operation, duration) -> sprintf "Operation '%s' timed out after %A" operation duration
+        | PaginationError(entityType, msg) -> sprintf "Pagination error for %s: %s" entityType msg
         | AggregateError nel ->
             let errors = NonEmptyList.toList nel
 

@@ -75,6 +75,13 @@ let writeNode =
 let writeRelationship =
     SerializationGraphElements.writeRelationship
 
+/// Re-export high-performance direct functions for hot path
+let internal writeNodeDirect =
+    SerializationGraphElements.writeNodeDirect
+
+let internal writeRelationshipDirect =
+    SerializationGraphElements.writeRelationshipDirect
+
 let serializeProperties =
     SerializationCollections.serializeProperties
 

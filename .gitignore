@@ -98,6 +98,9 @@ llm-generated*
 concatenated_fsharp_files.txt
 concatenate_fsharp.sh
 
+# Debug Scripts
+debug-scripts/*
+
 
 
 # Distribution directory - contains built binaries

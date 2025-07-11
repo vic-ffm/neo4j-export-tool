@@ -23,6 +23,7 @@
 module Neo4jExport.SerializationGraphElements
 
 open System
+open System.Collections.Generic
 open System.Text.Json
 open Neo4j.Driver
 open Neo4jExport
@@ -122,7 +123,15 @@ let serializeRelationship
         writer.WriteEndObject()
         writer.WriteEndObject()
 
-let writeNode (writer: Utf8JsonWriter) (node: INode) (elementId: string) (stableId: string) (ctx: WriterContext) =
+/// Internal high-performance node serialization that works directly with primitive data
+/// Used in the hot path to avoid object allocations
+let internal writeNodeDirect 
+    (writer: Utf8JsonWriter) 
+    (elementId: string) 
+    (stableId: string) 
+    (labels: IReadOnlyList<string>) 
+    (properties: IReadOnlyDictionary<string, obj>) 
+    (ctx: WriterContext) =
     writer.WriteStartObject()
     writer.WriteString("type", "node")
     writer.WriteString("element_id", elementId)
@@ -130,7 +139,7 @@ let writeNode (writer: Utf8JsonWriter) (node: INode) (elementId: string) (stable
     writer.WriteString("export_id", ctx.ExportId.ToString())
     writer.WriteStartArray("labels")
 
-    node.Labels
+    labels
     |> Seq.truncate ctx.Config.MaxLabelsPerNode
     |> Seq.iter (fun label ->
         match validateLabel label elementId with
@@ -142,12 +151,23 @@ let writeNode (writer: Utf8JsonWriter) (node: INode) (elementId: string) (stable
     writer.WriteEndArray()
     writer.WriteStartObject "properties"
 
-    serializeProperties writer ctx SerializationDepth.zero node.Properties
+    serializeProperties writer ctx SerializationDepth.zero properties
 
     writer.WriteEndObject()
     writer.WriteEndObject()
 
-let writeRelationship (writer: Utf8JsonWriter) (rel: IRelationship) (ids: EntityIdsWithStable) (ctx: WriterContext) =
+let writeNode (writer: Utf8JsonWriter) (node: INode) (elementId: string) (stableId: string) (ctx: WriterContext) =
+    // Delegate to the direct implementation for code reuse
+    writeNodeDirect writer elementId stableId node.Labels node.Properties ctx
+
+/// Internal high-performance relationship serialization that works directly with primitive data
+/// Used in the hot path to avoid object allocations
+let internal writeRelationshipDirect
+    (writer: Utf8JsonWriter)
+    (relType: string)
+    (properties: IReadOnlyDictionary<string, obj>)
+    (ids: EntityIdsWithStable)
+    (ctx: WriterContext) =
     writer.WriteStartObject()
     writer.WriteString("type", "relationship")
     writer.WriteString("element_id", ids.ElementId)
@@ -155,7 +175,7 @@ let writeRelationship (writer: Utf8JsonWriter) (rel: IRelationship) (ids: Entity
     writer.WriteString("export_id", ctx.ExportId.ToString())
 
     let safeType =
-        match validateRelType rel.Type ids.ElementId with
+        match validateRelType relType ids.ElementId with
         | Ok t -> t
         | Error msg ->
             ctx.ErrorFuncs.TrackWarning msg (Some ids.ElementId) None
@@ -168,10 +188,14 @@ let writeRelationship (writer: Utf8JsonWriter) (rel: IRelationship) (ids: Entity
     writer.WriteString("end_node_content_hash", ids.EndStableId)
     writer.WriteStartObject("properties")
 
-    serializeProperties writer ctx SerializationDepth.zero rel.Properties
+    serializeProperties writer ctx SerializationDepth.zero properties
 
     writer.WriteEndObject()
     writer.WriteEndObject()
+
+let writeRelationship (writer: Utf8JsonWriter) (rel: IRelationship) (ids: EntityIdsWithStable) (ctx: WriterContext) =
+    // Delegate to the direct implementation for code reuse
+    writeRelationshipDirect writer rel.Type rel.Properties ids ctx
 
 let serializeGraphElement
     (writer: Utf8JsonWriter)
