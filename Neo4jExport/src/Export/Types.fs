@@ -29,6 +29,8 @@ open Neo4j.Driver
 open Neo4jExport
 open ErrorTracking
 
+// Struct attribute makes these value types for stack allocation
+// Reduces GC pressure in high-throughput scenarios
 [<Struct>]
 type EntityIds =
     { ElementId: string
@@ -59,17 +61,17 @@ type WriterContext =
 // Thread-safe mapping for stable IDs
 type NodeIdMapping = System.Collections.Concurrent.ConcurrentDictionary<string, string>
 
-/// Record handler that can maintain state
 type RecordHandler<'state> = 'state -> IRecord -> int64 -> 'state
 
-/// Combined state for node export that tracks both lines and labels
 type NodeExportState =
     { LineState: LineTrackingState
       LabelTracker: LabelStatsTracker.Tracker }
 
-/// State for relationship export that only tracks lines
 type RelationshipExportState = LineTrackingState
 
+// Active patterns provide pattern matching over arbitrary types
+// The (|PatternName|_|) syntax defines a partial active pattern that returns Option
+// These enable elegant type testing in match expressions
 let (|TemporalType|_|) (value: obj) =
     match value with
     | :? LocalDate as ld -> Some(ld.ToString())
@@ -91,6 +93,7 @@ let (|NumericType|_|) (value: obj) =
     | :? byte -> Some value
     | :? sbyte -> Some value
     | :? decimal -> Some value
+    // Exclude special float values that don't serialize well to JSON
     | :? double as d when not (Double.IsNaN d || Double.IsInfinity d) -> Some value
     | :? float32 as f when not (Single.IsNaN f || Single.IsInfinity f) -> Some value
     | _ -> None
@@ -107,7 +110,6 @@ type KeysetId =
     | NumericId of int64 // For Neo4j 4.x using id() function
     | ElementId of string // For Neo4j 5.x+ using elementId() function
 
-// Helper functions for KeysetId
 module KeysetId =
     let defaultForVersion =
         function
@@ -123,21 +125,22 @@ module KeysetId =
         | NumericId _, ElementId _ -> failwith "Cannot compare different ID types"
         | ElementId _, NumericId _ -> failwith "Cannot compare different ID types"
 
-    // For use in query parameter building
     let toParameter =
         function
         | NumericId n -> box n
         | ElementId s -> box s
 
-/// Pagination strategy for batch processing
 type PaginationStrategy =
     | SkipLimit of skip: int
     | Keyset of lastId: KeysetId option * version: Neo4jVersion
 
 /// Mutable batch performance tracker for hot path efficiency
 /// Note: Uses types from Neo4jExport namespace (Core/Types.fs)
+/// Sealed attribute prevents inheritance, enabling JIT optimizations
 [<Sealed>]
 type BatchPerformanceTracker() =
+    // Mutable fields for in-place updates avoid allocation overhead
+    // This is a justified use of mutation for performance-critical telemetry
     let mutable batchCount = 0
     let mutable totalTimeMs = 0.0
     let mutable firstBatchTimeMs = 0.0
@@ -164,7 +167,6 @@ type BatchPerformanceTracker() =
             
         let avgTime = if batchCount > 0 then totalTimeMs / float batchCount else 0.0
         
-        // Analyze performance trend
         let trend = 
             if samples.Count < 3 then "insufficient_data"
             elif samples.Count >= 3 then
@@ -194,36 +196,32 @@ type BatchPerformanceTracker() =
             SampleTimings = samples |> Seq.toList
         }
 
-/// Query builder function type
 type QueryBuilder =
     Neo4jVersion -> PaginationStrategy -> int -> string * System.Collections.Generic.IDictionary<string, obj>
 
-// Export state that flows through the pipeline
 type ExportState =
     { Version: Neo4jVersion
       NodeIdMapping: NodeIdMapping 
-      // Add performance tracking
       NodePerfTracker: BatchPerformanceTracker
       RelPerfTracker: BatchPerformanceTracker }
 
+    // Static members on records provide factory methods without separate modules
+    // This pattern keeps construction logic close to the type definition
     static member Create(version: Neo4jVersion) =
         { Version = version
           NodeIdMapping = NodeIdMapping()
           NodePerfTracker = BatchPerformanceTracker()
           RelPerfTracker = BatchPerformanceTracker() }
 
-/// Enhanced record handler that includes ExportState
 type RecordHandlerWithExport<'state> = ExportState -> 'state -> IRecord -> int64 -> 'state
 
-/// Enhanced batch processor supporting both static and dynamic queries
 type BatchProcessor =
     { Query: string option // Static query for Unknown version fallback
       QueryBuilder: QueryBuilder option // Dynamic query builder
       GetTotalQuery: string option
       EntityName: string
-      Version: Neo4jVersion } // Add version field for keyset pagination
+      Version: Neo4jVersion }
 
-    /// Create legacy processor with static query
     static member CreateLegacy(query: string, getTotalQuery: string option, entityName: string, version: Neo4jVersion) =
         { Query = Some query
           QueryBuilder = None
@@ -231,7 +229,6 @@ type BatchProcessor =
           EntityName = entityName
           Version = version }
 
-    /// Create dynamic processor with query builder
     static member CreateDynamic
         (queryBuilder: QueryBuilder, getTotalQuery: string option, entityName: string, version: Neo4jVersion)
         =
@@ -241,7 +238,6 @@ type BatchProcessor =
           EntityName = entityName
           Version = version }
 
-/// Version-aware batch processor configuration
 type VersionAwareBatchProcessor =
     { QueryBuilder: Neo4jVersion -> KeysetId option -> string
       ParameterBuilder: KeysetId option -> int -> int option -> IDictionary<string, obj>
@@ -249,13 +245,11 @@ type VersionAwareBatchProcessor =
       EntityName: string
       Version: Neo4jVersion }
 
-/// Context for individual record processing
 type RecordContext<'TAccumulator> =
     { Buffer: ArrayBufferWriter<byte>
       ErrorAccumulator: 'TAccumulator
       Stats: ExportProgress }
 
-/// Groups parameters for batch processing operations
 type BatchContext<'TAccumulator> =
     { Processor: BatchProcessor
       Session: SafeSession

@@ -30,12 +30,16 @@ open ErrorTracking
 // --- Pure Key Generation Functions ---
 
 /// Struct key for efficient deduplication in hot path
+/// Struct types are stack-allocated value types, avoiding heap allocation pressure
+/// in performance-critical scenarios like error deduplication during large exports
 [<Struct>]
 type ErrorKey =
     { ExceptionTypeHash: int
       MessagePrefixHash: int }
 
 /// Pure function to generate deduplication key from exception
+/// 'inline' causes the compiler to replace function calls with the function body,
+/// eliminating call overhead in this frequently-used function
 let inline generateErrorKey (ex: exn) : ErrorKey =
     let exceptionType = ex.GetType().Name
     let message = ex.Message
@@ -64,6 +68,9 @@ let inline private generateErrorKeyFromDetails (exceptionType: string) (message:
 // --- Mutable Statistics Types ---
 
 /// Statistics for efficient accumulation (using class for mutability)
+/// Mutable class is used instead of immutable records for performance - updating
+/// statistics in-place avoids creating thousands of intermediate objects during
+/// large batch processing. The mutability is contained within this module.
 type ErrorStatistics() =
     member val Count = 1 with get, set
     member val FirstOccurrenceIndex = 0L with get, set
@@ -91,6 +98,8 @@ type ErrorInfo =
       ErrorType: string }
 
 /// Batch-scoped error accumulator with pre-allocated structures
+/// Uses .NET Dictionary for O(1) lookups during high-volume error tracking.
+/// The mutable fields track batch-level statistics without allocating new records.
 type BatchErrorAccumulator =
     { Errors: Dictionary<ErrorKey, ErrorInfo * ErrorStatistics>
       mutable CurrentIndex: int64
@@ -184,6 +193,8 @@ let flushErrors (accumulator: BatchErrorAccumulator) (errorFuncs: ErrorTrackingF
         ()
     else
         // Transform and write all accumulated errors
+        // KeyValue active pattern destructures .NET KeyValuePair<K,V> into tuple form
+        // The underscore ignores the key since we only need the value (info, stats) tuple
         for KeyValue(_, (info, stats)) in accumulator.Errors do
             let message =
                 formatDedupedError info stats batchSize

@@ -28,10 +28,15 @@ open Neo4jExport
 
 /// Thread-safe error tracking using F# agents
 type internal ErrorTracker() =
+    // MailboxProcessor (also known as F# agents) provides actor-model concurrency
+    // Messages are processed sequentially, eliminating race conditions without locks
     let agent =
         MailboxProcessor.Start(fun inbox ->
+            // Recursive loop maintains agent state immutably
+            // Each iteration creates new state, passed to the next iteration
             let rec loop (state: ErrorTrackingState) =
                 async {
+                    // Receive waits for the next message
                     let! msg = inbox.Receive()
 
                     match msg with
@@ -101,6 +106,9 @@ type internal ErrorTracker() =
 
                   CurrentLine = 2L })
 
+    // Public API uses PostAndReply for synchronous operations
+    // PostAndReply blocks until the agent processes the message and sends a reply
+    // The '?' prefix creates optional parameters that become option types
     member _.AddError(message, ?elementId, ?details) =
         agent.PostAndReply(fun ch -> AddError(message, elementId, details, ch))
 
@@ -146,6 +154,8 @@ type ErrorTrackingFunctions =
       TrackWarning: string -> string option -> IDictionary<string, JsonValue> option -> unit
       IncrementLine: unit -> unit
       // Queries (reads) - grouped for clarity
+      // Anonymous records {| ... |} provide structural typing without defining a named type
+      // Useful for grouping related functions without ceremony
       Queries:
           {| GetErrors: unit -> ErrorRecord list
              GetErrorCount: unit -> int64

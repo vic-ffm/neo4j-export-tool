@@ -26,7 +26,6 @@ open System
 
 /// Core progress reporting operations
 module ProgressOperations =
-    /// Report progress with calculated rate
     let report
         (stats: ExportProgress)
         (startTime: DateTime)
@@ -37,6 +36,8 @@ module ProgressOperations =
         =
         let now = DateTime.UtcNow
 
+        // Throttle progress reporting to avoid spamming logs during fast exports
+        // Only report if the specified interval has elapsed since last report
         if now - lastProgress > interval then
             let rate =
                 float stats.RecordsProcessed

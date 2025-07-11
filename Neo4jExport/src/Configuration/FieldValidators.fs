@@ -31,6 +31,8 @@ module internal ConfigurationFieldValidators =
         try
             let uri = Uri(uriStr)
 
+            // Neo4j uses these specific schemes for different connection types:
+            // bolt/neo4j = unencrypted, bolt+s/neo4j+s = encrypted
             if
                 uri.Scheme = "bolt"
                 || uri.Scheme = "neo4j"
@@ -83,6 +85,7 @@ module internal ConfigurationFieldValidators =
             | _ -> Ok(VInt64 parsed)
 
     let validateBool (name: string) (value: string) : Result<ValidatedField, string> =
+        // Support multiple boolean representations for user convenience
         match value.ToLowerInvariant() with
         | "true"
         | "yes"
@@ -94,6 +97,8 @@ module internal ConfigurationFieldValidators =
 
     /// Validates JSON buffer size with KB-specific constraints
     let validateJsonBufferSize (value: string) : Result<ValidatedField, string> =
+        // Buffer size limited to 1MB (1024KB) to prevent excessive memory allocation
+        // while ensuring adequate performance for streaming JSON serialization
         match validateInt "JSON_BUFFER_SIZE_KB" (Some 1) (Some 1024) value with
         | Error e -> Error e
         | Ok(VInt size) -> Ok(VInt size)

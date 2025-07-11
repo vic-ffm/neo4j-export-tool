@@ -58,10 +58,10 @@ docker compose -f neo4j-export-runner.compose.yaml up --build
 
 ```bash
 # Set your Neo4j connection details
-export NEO4J_URI=bolt://localhost:7687
-export NEO4J_USER=neo4j
-export NEO4J_PASSWORD=your-password
-export OUTPUT_DIRECTORY=./exports
+export N4JET_NEO4J_URI=bolt://localhost:7687
+export N4JET_NEO4J_USER=neo4j
+export N4JET_NEO4J_PASSWORD=your-password
+export N4JET_OUTPUT_DIRECTORY=./exports
 
 # Run the export
 ./neo4j-export
@@ -88,10 +88,10 @@ For platform-specific installation instructions, see [docs/Install.md](docs/Inst
 The tool uses environment variables for configuration:
 
 ```bash
-NEO4J_URI=bolt://localhost:7687     # Neo4j connection URI
-NEO4J_USER=neo4j                    # Username
-NEO4J_PASSWORD=your-password        # Password
-OUTPUT_DIRECTORY=./exports          # Where to save exports
+N4JET_NEO4J_URI=bolt://localhost:7687     # Neo4j connection URI
+N4JET_NEO4J_USER=neo4j                    # Username
+N4JET_NEO4J_PASSWORD=your-password        # Password
+N4JET_OUTPUT_DIRECTORY=./exports          # Where to save exports
 ```
 
 See [docs/Configuration.md](docs/Configuration.md) for all available options.
@@ -158,7 +158,7 @@ Report issues on our [GitHub Issues](https://github.com/vic-ffm/neo4j-export-too
 See [docs/Improvements.md](docs/Improvements.md) for planned features or suggest new ones via GitHub Issues.
 
 ### 🔍 Troubleshooting
-- Enable debug mode: `DEBUG=true ./neo4j-export`
+- Enable debug mode: `N4JET_DEBUG=true ./neo4j-export`
 - Check [docs/Install.md](docs/Install.md#troubleshooting) for common issues
 - Review exit codes in error messages
 

@@ -2,53 +2,35 @@
 
 ## Purpose
 
-The Neo4j Export Tool (NET) generates stable, deterministic identifiers for nodes and relationships that remain consistent across:
-- Multiple exports of the same database
-- Different Neo4j versions (4.x, 5.x, 6.x+)
-- Changes to Neo4j's internal ID formats
+Version 0.14.0 of the Neo4j Export Tool introduced the following deterministic identifiers for nodes and relationships to enable:
+- Change detection across multiple exports of the same database
+- Tracking of data lineage and history in downstream analytics systems
+- Content-based addressing for deduplication and data quality
 
-This enables downstream analytics systems (e.g., ClickHouse, PowerBI) to detect changes and track data snapshots across exports.
+## Overview of ID Types
 
-## Guiding Principles
+The tool generates two distinct types of hashes with different purposes:
 
-### Identity is Content
-The identifiers are **content-addressable**. Their purpose is to generate unique, deterministic signatures:
-- **For nodes (`NET_node_content_hash`)**: Based solely on labels and properties
-- **For relationships (`NET_rel_topology_hash`)**: Based on type, connected nodes, and properties
-- If the relevant content is identical, the ID will be identical
-- If the content differs in any way, the ID will be different
+1. **`NET_node_content_hash`** - A content-based hash for nodes based on their labels and properties
+2. **`NET_rel_identity_hash`** - An identity hash for relationships based on their type, endpoints, and properties
 
-### Version Independence
-The generation logic is completely decoupled from Neo4j's internal ID systems (`id`, `elementId`). This ensures that the ID for an element with identical content will be the same regardless of whether it is exported from Neo4j 4.x, 5.x, or 6.x+.
+**Note**: While `NET_node_content_hash` is content-based and version independent, `NET_rel_identity_hash` depends on Neo4j's internal element IDs, making it version-dependent between Neo4j 4.x and 5.x+.
 
-## Field Definitions
+## NET_node_content_hash
 
-### For Nodes
+### Purpose
+Provides a stable, content-addressable identifier for nodes that remains consistent when:
+- The same node (same labels and properties) is exported multiple times
+- The node is exported from different Neo4j versions
+- The node's internal ID changes (e.g., after database rebuild)
+
+### Field Details
 - **Field Name**: `NET_node_content_hash`
 - **Type**: String (64 characters)
-- **Format**: Lowercase hexadecimal representation of SHA-256 hash
+- **Format**: Lowercase hexadecimal SHA-256 hash
 - **Example**: `a7b9c2d4e6f8901234567890abcdef1234567890abcdef1234567890abcdef12`
 
-### For Relationships
-
-#### Primary Identity Field
-- **Field Name**: `NET_rel_identity_hash`
-- **Type**: String (64 characters)
-- **Format**: Lowercase hexadecimal representation of SHA-256 hash
-- **Purpose**: Stable identity that only changes when the relationship itself changes (type, endpoints, or properties)
-- **Example**: `b8c9d3e5f7a9012345678901bcdef2345678901bcdef2345678901bcdef234567`
-
-#### Additional Fields
-- **`start_element_id`**: Neo4j element ID of the start node
-- **`end_element_id`**: Neo4j element ID of the end node
-- **`start_node_content_hash`**: The `NET_node_content_hash` of the start node
-- **`end_node_content_hash`**: The `NET_node_content_hash` of the end node
-
-## Generation Rules
-
-### For Nodes
-
-The ID is generated using SHA-256 hash of concatenated components. This rule applies unconditionally to all nodes:
+### Generation Algorithm
 
 ```
 SHA256("node:" + sorted_labels + ":" + canonicalized_properties)
@@ -56,14 +38,14 @@ SHA256("node:" + sorted_labels + ":" + canonicalized_properties)
 
 Where:
 - `sorted_labels`: Labels sorted alphabetically and joined with "+". Empty label set results in empty string
-- `canonicalized_properties`: JSON representation of properties with keys sorted alphabetically. If no properties exist, this is an empty string ("")
+- `canonicalized_properties`: JSON representation with keys sorted alphabetically. Empty object becomes empty string
 
-#### Node Examples
+### Examples
 
 1. **Node with labels and properties**:
    ```
    Input: Node with labels ["Person", "Employee"] and properties {name: "John", age: 30}
-   Hash Input: "node:Employee+Person:{\"age\":30,\"name\":\"John\"}"
+   Hash Input: "node:Employee+Person:{"age":30,"name":"John"}"
    ```
 
 2. **Node with only labels**:
@@ -72,188 +54,166 @@ Where:
    Hash Input: "node:Config:"
    ```
 
-3. **Node with only properties**:
+3. **Node without labels** (special case):
    ```
    Input: Node with no labels and properties {value: 1}
-   Hash Input: "node::{\"value\":1}"
+   Hash Input: "node::{"value":1}"
    ```
 
-4. **Node without labels or properties**:
-   ```
-   Input: Node with no labels and no properties
-   Hash Input: "node::"
-   ```
+### Version Independence
+✅ **Truly version-independent** - The same node will generate the same hash across Neo4j 4.x, 5.x, and future versions.
 
-### For Relationships
+## NET_rel_identity_hash
 
-#### NET_rel_identity_hash Generation
+### Purpose
+Provides a stable identifier for relationships that remains consistent when:
+- The same relationship is exported multiple times from the same database
+- The relationship's properties remain unchanged
+- The relationship connects the same two nodes (by element ID)
 
-The identity hash is generated using SHA-256 hash of the relationship's type, its properties, and the **Neo4j element IDs** of its start and end nodes:
+### Field Details
+- **Field Name**: `NET_rel_identity_hash`
+- **Type**: String (64 characters)
+- **Format**: Lowercase hexadecimal SHA-256 hash
+- **Example**: `b8c9d3e5f7a9012345678901bcdef2345678901bcdef2345678901bcdef234567`
+
+### Generation Algorithm
 
 ```
 SHA256("rel:" + type + ":" + start_element_id + ":" + end_element_id + ":" + canonicalized_properties)
 ```
 
 Where:
-- `type`: The relationship type
-- `start_element_id`: The Neo4j element ID of the start node (e.g., "4:abc:123")
-- `end_element_id`: The Neo4j element ID of the end node (e.g., "4:def:456")
-- `canonicalized_properties`: JSON representation of properties with keys sorted alphabetically. If no properties exist, this is an empty string ("")
+- `type`: The relationship type (e.g., "KNOWS", "FOLLOWS")
+- `start_element_id`: Neo4j's internal element ID of the start node
+- `end_element_id`: Neo4j's internal element ID of the end node
+- `canonicalized_properties`: JSON representation with keys sorted alphabetically
 
-**Key Difference**: This hash uses Neo4j element IDs instead of content hashes, making it stable even when connected nodes' properties change.
+### Examples
 
-#### Relationship Examples
-
-1. **Relationship with properties**:
+1. **Neo4j 4.x relationship**:
    ```
-   Input: KNOWS relationship with {since: 2020} connecting:
-   - Start node with element ID: "4:abc:123"
-   - End node with element ID: "4:def:456"
-   Hash Input: "rel:KNOWS:4:abc:123:4:def:456:{\"since\":2020}"
-
-   Export includes:
-   - NET_rel_identity_hash: (hash of above)
-   - start_element_id: "4:abc:123"
-   - end_element_id: "4:def:456"
-   - start_node_content_hash: (content hash of start node)
-   - end_node_content_hash: (content hash of end node)
+   Input: KNOWS relationship with {since: 2020} connecting nodes with IDs 123 and 456
+   Hash Input: "rel:KNOWS:123:456:{"since":2020}"
    ```
 
-2. **Relationship without properties**:
+2. **Neo4j 5.x relationship** (same logical relationship):
    ```
-   Input: FOLLOWS relationship with no properties connecting:
-   - Start node with element ID: "4:abc:789"
-   - End node with element ID: "4:def:012"
-   Hash Input: "rel:FOLLOWS:4:abc:789:4:def:012:"
+   Input: KNOWS relationship with {since: 2020} connecting nodes with element IDs "4:abc:123" and "4:def:456"
+   Hash Input: "rel:KNOWS:4:abc:123:4:def:456:{"since":2020}"
    ```
 
-## Canonicalization Rules
+### Version Dependence
+❌ **Version-dependent** - The same logical relationship will generate different hashes between Neo4j versions due to:
+- Neo4j 4.x uses numeric IDs (e.g., `123`)
+- Neo4j 5.x+ uses UUID-based element IDs (e.g., `4:abc:123`)
 
-To ensure consistent hashing across exports:
+### Additional Relationship Fields
 
-### Property Canonicalization
+To provide complete tracking capability, relationships also include:
 
-1. **Key Ordering**: All property keys must be sorted alphabetically
-2. **JSON Format**: Use compact JSON with no extra whitespace
+- **`start_element_id`**: Neo4j element ID of the start node
+- **`end_element_id`**: Neo4j element ID of the end node
+- **`start_node_content_hash`**: The `NET_node_content_hash` of the start node
+- **`end_node_content_hash`**: The `NET_node_content_hash` of the end node
+
+This allows downstream systems to:
+- Track when connected nodes change (content hashes change)
+- Identify the same logical relationship across exports (when feasible)
+- Build relationship graphs using content-based node identities
+
+## Property Canonicalization
+
+Both hash types use the same canonicalization rules to ensure consistency:
+
+1. **Key Ordering**: Property keys sorted alphabetically
+2. **JSON Format**: Compact JSON with no whitespace
 3. **Number Format**:
    - Integers: No decimal point (30, not 30.0)
    - Floats: Minimal representation (3.14, not 3.140)
-4. **String Values**: UTF-8 encoded with JSON escaping
-5. **Null Values**: Omit properties with null values
-6. **Arrays**: Elements maintain their order
-7. **Nested Objects**: Apply same rules recursively
+4. **Null Handling**: Properties with null values are omitted
+5. **Special Types**:
+   - Temporal values are pre-processed to handle precision differences
+   - Neo4j-specific types (Point, Duration) are converted appropriately
 
-### Label Handling
+## Implementation Details
 
-1. Sort labels alphabetically
-2. Join with "+" character
-3. Empty label set represented as empty string
+### Two-Pass Export Process
 
-### Special Characters
+The tool uses a two-pass approach to generate all identifiers:
 
-- All strings use standard JSON escaping
-- Unicode characters preserved as-is (not escaped to \uXXXX)
+1. **Pass 1: Export Nodes**
+   - Generate `NET_node_content_hash` for each node
+   - Store mapping of `elementId → content_hash` in memory
+   - Write nodes to JSONL with their content hashes
 
-## Implementation Guidelines
+2. **Pass 2: Export Relationships**
+   - Look up content hashes for start/end nodes from Pass 1 mapping
+   - Generate `NET_rel_identity_hash` using element IDs
+   - Write relationships with both identity and node content hashes
 
-A two-pass export process is required to implement this specification correctly:
+## Downstream Usage Patterns
 
-### Two-Pass Process
+### Change Detection
 
-1. **Pass 1: Generate Node IDs**
-   - Iterate through every node in the database
-   - For each node, generate its `NET_node_content_hash` using the node generation rule
-   - Store a mapping of `[Native Neo4j ID] -> [Generated Node Content Hash]` in memory
-   - Write the node data (including the new content hash) to the JSONL file
-
-2. **Pass 2: Generate Relationship IDs**
-   - Iterate through every relationship in the database
-   - For each relationship, get the native IDs of its start and end nodes
-   - Look up their generated `NET_node_content_hash` values from the mapping created in Pass 1
-   - Generate the relationship's `NET_rel_identity_hash` using the Neo4j element IDs
-   - Include both the element IDs and node content hashes in the output
-   - Write the relationship data to the JSONL file
-
-### F# Implementation Pattern
-
-```fsharp
-module Neo4jExportToolId
-
-open System
-open System.Security.Cryptography
-open System.Text
-open Newtonsoft.Json
-
-// Configure JSON settings for canonical output
-let private jsonSettings =
-    let settings = JsonSerializerSettings()
-    settings.NullValueHandling <- NullValueHandling.Ignore // Omits nulls
-    settings
-
-let private computeSha256 (input: string) =
-    use sha256 = SHA256.Create()
-    let bytes = Encoding.UTF8.GetBytes(input)
-    let hash = sha256.ComputeHash(bytes)
-    BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant()
-
-let private canonicalizeProperties (properties: IDictionary<string, obj>) =
-    if properties.Count = 0 then
-        "" // Use empty string for nodes without properties
-    else
-        // Sort keys alphabetically before serializing
-        let sorted = properties |> Seq.sortBy (fun kvp -> kvp.Key) |> dict
-        JsonConvert.SerializeObject(sorted, Formatting.None, jsonSettings)
-
-let generateNodeId (labels: string seq) (properties: IDictionary<string, obj>) =
-    let sortedLabels = labels |> Seq.sort |> String.concat "+"
-    let propsJson = canonicalizeProperties properties
-    let hashInput = sprintf "node:%s:%s" sortedLabels propsJson
-    computeSha256 hashInput
-
-// Generate identity hash using element IDs (stable within database)
-let generateRelationshipIdentityHash (relType: string) (startElementId: string) (endElementId: string) (properties: IDictionary<string, obj>) =
-    let propsJson = canonicalizeProperties properties
-    let hashInput = sprintf "rel:%s:%s:%s:%s" relType startElementId endElementId propsJson
-    computeSha256 hashInput
+```sql
+-- Detect changed nodes between exports
+SELECT
+    old.element_id,
+    old.NET_node_content_hash as old_hash,
+    new.NET_node_content_hash as new_hash
+FROM export_2024_01 old
+JOIN export_2024_02 new ON old.element_id = new.element_id
+WHERE old.NET_node_content_hash != new.NET_node_content_hash
 ```
 
-## Collision Handling
+### Content-Based Joins
 
-- **No collision detection**: The probability of SHA-256 collision is astronomically low (1 in 2^256)
-- **No special handling**: If a collision theoretically occurs, both entities would have the same ID
-- **Rationale**: The computational cost of collision detection outweighs the infinitesimal risk
+```sql
+-- Join nodes by content across different databases
+SELECT *
+FROM database_a.nodes a
+JOIN database_b.nodes b ON a.NET_node_content_hash = b.NET_node_content_hash
+```
 
-## Performance Considerations
+### Relationship Stability Analysis
 
-1. **Hashing overhead**: SHA-256 is fast; typical overhead < 1μs per entity
-2. **Memory usage**: No additional memory needed beyond string allocation
-3. **Caching**: Hash results are not cached; computed on-the-fly during export
-4. **Parallelization**: Hash computation is thread-safe and can be parallelized
+```sql
+-- Find relationships where nodes changed but relationship didn't
+SELECT
+    r1.NET_rel_identity_hash,
+    r1.start_node_content_hash != r2.start_node_content_hash as start_changed,
+    r1.end_node_content_hash != r2.end_node_content_hash as end_changed
+FROM export_jan r1
+JOIN export_feb r2 ON r1.NET_rel_identity_hash = r2.NET_rel_identity_hash
+```
 
-## Backward Compatibility
+## Limitations and Considerations
 
-- This is a new field; existing JSONL consumers can ignore it
-- The original `element_id` field remains unchanged
-- No breaking changes to existing format
+### Version Migration
+When migrating from Neo4j 4.x to 5.x:
+- All `NET_node_content_hash` values remain stable ✅
+- All `NET_rel_identity_hash` values will change ❌
+- Downstream systems must handle this one-time relationship hash change
 
-## Downstream Implications for Analytics (ClickHouse/Power BI)
+### Collision Probability
+- SHA-256 collision probability: ~1 in 2^256
+- No collision detection implemented (computational cost outweighs risk)
+- If collision occurs, entities would share the same ID
 
-### For Nodes
-- **Change Detection**: `NET_node_content_hash` changes when any property or label changes
-- **Content-Based Identity**: Same content always produces the same hash across exports
+### Performance Impact
+- SHA-256 computation: ~1μs per entity on modern hardware
+- No caching (hashes computed on-demand)
+- Typically adds <5% to total export time
 
-### For Relationships
-- **Stable Identity**: `NET_rel_identity_hash` remains constant unless the relationship itself changes (type, endpoints, or properties)
-- **Node Change Detection**: Compare `start_node_content_hash` and `end_node_content_hash` across exports to detect when connected nodes change
-- **Relationship Tracking**: Can track the same relationship across exports even when connected nodes' properties change
-- **Complete Picture**: The combination of fields allows distinguishing between:
-  - Relationship changes (identity hash changes)
-  - Node changes (content hashes change but identity hash stays same)
-  - Both changing (all hashes change)
+## Future Ideas
 
-## Future Considerations
+### Potential Future Enhancements
+1. Optional content-based relationship hashing (using node content hashes instead of element IDs)
+2. Configurable hash algorithms for different security/performance requirements
+3. Bloom filter generation for efficient existence checks
 
-1. **Version tolerance**: The scheme handles future Neo4j versions without modification since it never relies on internal IDs
-2. **Property changes**: Any property change creates a new ID (by design) - this is a content-addressable system
-3. **Label changes**: Adding/removing labels creates a new ID (by design)
-4. **Relationship repointing**: Changing start/end nodes creates a new ID (by design)
+### Backward Compatibility
+- These are additional fields; existing consumers can ignore them
+- Original `element_id` field remains unchanged
+- No breaking changes to JSONL format

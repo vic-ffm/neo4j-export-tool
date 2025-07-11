@@ -37,10 +37,10 @@ Download the appropriate binary for your platform from the [latest release](http
    - Right-click `run-neo4j-export-windows.bat` and select "Edit" (or open in Notepad)
    - Modify the environment variables:
    ```batch
-   set NEO4J_URI=bolt://localhost:7687
-   set NEO4J_USER=neo4j
-   set NEO4J_PASSWORD=your-password-here
-   set OUTPUT_DIRECTORY=C:\neo4j-exports
+   set N4JET_NEO4J_URI=bolt://localhost:7687
+   set N4JET_NEO4J_USER=neo4j
+   set N4JET_NEO4J_PASSWORD=your-password-here
+   set N4JET_OUTPUT_DIRECTORY=C:\neo4j-exports
    ```
 
 3. **Run the export**
@@ -52,10 +52,10 @@ Download the appropriate binary for your platform from the [latest release](http
 
 ```powershell
 # Set environment variables
-$env:NEO4J_URI = "bolt://localhost:7687"
-$env:NEO4J_USER = "neo4j"
-$env:NEO4J_PASSWORD = "your-password"
-$env:OUTPUT_DIRECTORY = "C:\neo4j-exports"
+$env:N4JET_NEO4J_URI = "bolt://localhost:7687"
+$env:N4JET_NEO4J_USER = "neo4j"
+$env:N4JET_NEO4J_PASSWORD = "your-password"
+$env:N4JET_OUTPUT_DIRECTORY = "C:\neo4j-exports"
 
 # Run the export
 .\neo4j-export-windows-amd64.exe
@@ -83,10 +83,10 @@ $env:OUTPUT_DIRECTORY = "C:\neo4j-exports"
 2. **Run the export**
    ```bash
    # Set environment variables and run
-   NEO4J_URI="bolt://localhost:7687" \
-   NEO4J_USER="neo4j" \
-   NEO4J_PASSWORD="your-password" \
-   OUTPUT_DIRECTORY="./exports" \
+   N4JET_NEO4J_URI="bolt://localhost:7687" \
+   N4JET_NEO4J_USER="neo4j" \
+   N4JET_NEO4J_PASSWORD="your-password" \
+   N4JET_OUTPUT_DIRECTORY="./exports" \
    neo4j-export
    ```
 
@@ -95,10 +95,10 @@ $env:OUTPUT_DIRECTORY = "C:\neo4j-exports"
 #### Bash (~/.bashrc or ~/.bash_profile)
 ```bash
 # Add to your ~/.bashrc or ~/.bash_profile
-export NEO4J_URI="bolt://localhost:7687"
-export NEO4J_USER="neo4j"
-export NEO4J_PASSWORD="your-password"
-export OUTPUT_DIRECTORY="$HOME/neo4j-exports"
+export N4JET_NEO4J_URI="bolt://localhost:7687"
+export N4JET_NEO4J_USER="neo4j"
+export N4JET_NEO4J_PASSWORD="your-password"
+export N4JET_OUTPUT_DIRECTORY="$HOME/neo4j-exports"
 
 # Reload configuration
 source ~/.bashrc
@@ -107,10 +107,10 @@ source ~/.bashrc
 #### Zsh (~/.zshrc)
 ```zsh
 # Add to your ~/.zshrc
-export NEO4J_URI="bolt://localhost:7687"
-export NEO4J_USER="neo4j"
-export NEO4J_PASSWORD="your-password"
-export OUTPUT_DIRECTORY="$HOME/neo4j-exports"
+export N4JET_NEO4J_URI="bolt://localhost:7687"
+export N4JET_NEO4J_USER="neo4j"
+export N4JET_NEO4J_PASSWORD="your-password"
+export N4JET_OUTPUT_DIRECTORY="$HOME/neo4j-exports"
 
 # Reload configuration
 source ~/.zshrc
@@ -119,10 +119,10 @@ source ~/.zshrc
 #### Fish (~/.config/fish/config.fish)
 ```fish
 # Add to your ~/.config/fish/config.fish
-set -x NEO4J_URI "bolt://localhost:7687"
-set -x NEO4J_USER "neo4j"
-set -x NEO4J_PASSWORD "your-password"
-set -x OUTPUT_DIRECTORY "$HOME/neo4j-exports"
+set -x N4JET_NEO4J_URI "bolt://localhost:7687"
+set -x N4JET_NEO4J_USER "neo4j"
+set -x N4JET_NEO4J_PASSWORD "your-password"
+set -x N4JET_OUTPUT_DIRECTORY "$HOME/neo4j-exports"
 
 # Reload configuration
 source ~/.config/fish/config.fish
@@ -147,10 +147,10 @@ source ~/.config/fish/config.fish
 2. **Run the export**
    ```bash
    # Set environment variables and run
-   NEO4J_URI="bolt://localhost:7687" \
-   NEO4J_USER="neo4j" \
-   NEO4J_PASSWORD="your-password" \
-   OUTPUT_DIRECTORY="./exports" \
+   N4JET_NEO4J_URI="bolt://localhost:7687" \
+   N4JET_NEO4J_USER="neo4j" \
+   N4JET_NEO4J_PASSWORD="your-password" \
+   N4JET_OUTPUT_DIRECTORY="./exports" \
    ./neo4j-export-linux-amd64
    ```
 
@@ -159,10 +159,10 @@ source ~/.config/fish/config.fish
 #### Bash (~/.bashrc)
 ```bash
 # Add to your ~/.bashrc
-export NEO4J_URI="bolt://localhost:7687"
-export NEO4J_USER="neo4j"
-export NEO4J_PASSWORD="your-password"
-export OUTPUT_DIRECTORY="$HOME/neo4j-exports"
+export N4JET_NEO4J_URI="bolt://localhost:7687"
+export N4JET_NEO4J_USER="neo4j"
+export N4JET_NEO4J_PASSWORD="your-password"
+export N4JET_OUTPUT_DIRECTORY="$HOME/neo4j-exports"
 
 # Optional: Add alias for convenience
 alias neo4j-export='/usr/local/bin/neo4j-export'
@@ -174,10 +174,10 @@ source ~/.bashrc
 #### Zsh (~/.zshrc)
 ```zsh
 # Add to your ~/.zshrc
-export NEO4J_URI="bolt://localhost:7687"
-export NEO4J_USER="neo4j"
-export NEO4J_PASSWORD="your-password"
-export OUTPUT_DIRECTORY="$HOME/neo4j-exports"
+export N4JET_NEO4J_URI="bolt://localhost:7687"
+export N4JET_NEO4J_USER="neo4j"
+export N4JET_NEO4J_PASSWORD="your-password"
+export N4JET_OUTPUT_DIRECTORY="$HOME/neo4j-exports"
 
 # Optional: Add alias for convenience
 alias neo4j-export='/usr/local/bin/neo4j-export'
@@ -189,10 +189,10 @@ source ~/.zshrc
 #### Fish (~/.config/fish/config.fish)
 ```fish
 # Add to your ~/.config/fish/config.fish
-set -x NEO4J_URI "bolt://localhost:7687"
-set -x NEO4J_USER "neo4j"
-set -x NEO4J_PASSWORD "your-password"
-set -x OUTPUT_DIRECTORY "$HOME/neo4j-exports"
+set -x N4JET_NEO4J_URI "bolt://localhost:7687"
+set -x N4JET_NEO4J_USER "neo4j"
+set -x N4JET_NEO4J_PASSWORD "your-password"
+set -x N4JET_OUTPUT_DIRECTORY "$HOME/neo4j-exports"
 
 # Optional: Add alias for convenience
 alias neo4j-export '/usr/local/bin/neo4j-export'
@@ -214,10 +214,10 @@ After=network.target
 [Service]
 Type=oneshot
 User=your-username
-Environment="NEO4J_URI=bolt://localhost:7687"
-Environment="NEO4J_USER=neo4j"
-Environment="NEO4J_PASSWORD=your-password"
-Environment="OUTPUT_DIRECTORY=/var/neo4j-exports"
+Environment="N4JET_NEO4J_URI=bolt://localhost:7687"
+Environment="N4JET_NEO4J_USER=neo4j"
+Environment="N4JET_NEO4J_PASSWORD=your-password"
+Environment="N4JET_OUTPUT_DIRECTORY=/var/neo4j-exports"
 ExecStart=/usr/local/bin/neo4j-export
 
 [Install]
@@ -250,10 +250,10 @@ WantedBy=multi-user.target
 
    # Edit .env with your Neo4j credentials and settings
    # Key settings to update:
-   # - NEO4J_URI (use bolt://host.docker.internal:7687 for local Neo4j)
-   # - NEO4J_USER
-   # - NEO4J_PASSWORD
-   # - OUTPUT_DIRECTORY (typically /data/export for Docker)
+   # - N4JET_NEO4J_URI (use bolt://host.docker.internal:7687 for local Neo4j)
+   # - N4JET_NEO4J_USER
+   # - N4JET_NEO4J_PASSWORD
+   # - N4JET_OUTPUT_DIRECTORY (typically /data/export for Docker)
    ```
 
 3. **Run the export**
@@ -277,10 +277,10 @@ docker run --rm \
 
 # Run with inline environment variables
 docker run --rm \
-  -e NEO4J_URI=bolt://localhost:7687 \
-  -e NEO4J_USER=neo4j \
-  -e NEO4J_PASSWORD=your-password \
-  -e OUTPUT_DIRECTORY=/data/export \
+  -e N4JET_NEO4J_URI=bolt://localhost:7687 \
+  -e N4JET_NEO4J_USER=neo4j \
+  -e N4JET_NEO4J_PASSWORD=your-password \
+  -e N4JET_OUTPUT_DIRECTORY=/data/export \
   -v $(pwd)/exports:/data/export \
   --network host \
   neo4j-export-fsharp:latest
@@ -303,10 +303,10 @@ After installation, verify the tool works correctly:
 
 ```bash
 # Check version (sets minimal environment to avoid connection)
-NEO4J_URI=bolt://localhost:7687 NEO4J_USER=test NEO4J_PASSWORD=test ./neo4j-export --version
+N4JET_NEO4J_URI=bolt://localhost:7687 N4JET_NEO4J_USER=test N4JET_NEO4J_PASSWORD=test ./neo4j-export --version
 
 # Run with debug mode to test connection
-DEBUG=true ./neo4j-export
+N4JET_DEBUG=true ./neo4j-export
 ```
 
 ## Troubleshooting
@@ -334,7 +334,7 @@ DEBUG=true ./neo4j-export
 
 ### Getting Help
 
-1. Enable debug mode: `DEBUG=true`
+1. Enable debug mode: `N4JET_DEBUG=true`
 2. Check the logs for detailed error messages
 3. Refer to the [main documentation](./README.md)
 4. Report issues on GitHub

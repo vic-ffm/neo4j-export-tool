@@ -37,6 +37,8 @@ module MetadataWriter =
         (lineState: LineTrackingState)
         : Result<unit, string> =
 
+        // Write to memory first to calculate exact size before padding
+        // This allows accurate padding calculation without multiple passes
         use memoryStream = new MemoryStream()
 
         use writer =
@@ -164,7 +166,6 @@ module MetadataWriter =
         writer.WriteString("suffix", metadata.Compression.Suffix)
         writer.WriteEndObject()
 
-        // Database schema
         writer.WritePropertyName("database_schema")
         JsonHelpers.writeJsonValue writer (JObject metadata.DatabaseSchema)
 
@@ -190,6 +191,7 @@ module MetadataWriter =
             stream.Write(baseBytes, 0, baseBytes.Length)
             Ok()
         | Ok paddingBytesNeeded ->
+            // Remove the closing brace from base JSON to insert padding field
             let baseJsonLength = baseBytes.Length - 1
             stream.Write(baseBytes, 0, baseJsonLength)
 
@@ -198,6 +200,8 @@ module MetadataWriter =
 
             stream.Write(paddingPrefix, 0, paddingPrefix.Length)
 
+            // Fill padding with spaces (0x20) for human readability
+            // This creates a fixed-size metadata line for efficient seeking
             let paddingBytes =
                 Array.create paddingBytesNeeded (byte 32uy)
 

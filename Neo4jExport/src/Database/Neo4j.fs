@@ -31,10 +31,13 @@ open Neo4j.Driver
 
 /// Prevents concurrent session usage. Neo4j sessions are not thread-safe.
 type SafeSession(session: IAsyncSession) =
+    // ref creates a mutable reference cell - used here for thread-safe state
     let inUse = ref 0
 
     member _.RunAsync(query: string, ?parameters: IDictionary<string, obj>) : Async<IResultCursor> =
         async {
+            // CompareExchange atomically sets value to 1 if it's currently 0
+            // Returns the original value - if it wasn't 0, someone else is using the session
             if Interlocked.CompareExchange(inUse, 1, 0) <> 0 then
                 return
                     raise (
@@ -84,6 +87,8 @@ module Neo4j =
         | HalfOpen
 
     /// Circuit breaker for handling transient failures
+    /// Prevents cascading failures by temporarily blocking operations after repeated failures
+    /// States: Closed (normal) -> Open (blocking) -> HalfOpen (testing) -> Closed
     type CircuitBreaker =
         private
             { mutable State: CircuitState
@@ -128,6 +133,8 @@ module Neo4j =
 
     let private executeWithResilience<'T> (breaker: CircuitBreaker) (config: ExportConfig) (operation: Async<'T>) =
         async {
+            // Nested function approach keeps retry logic organized and allows shared state
+            // Each helper function has a specific responsibility in the retry pipeline
             let checkCircuitBreaker () =
                 lock breaker.Lock (fun () ->
                     match breaker.State with
@@ -176,6 +183,7 @@ module Neo4j =
                 | _ -> false
 
             let calculateDelay attempt =
+                // Exponential backoff: delay doubles with each attempt (1s, 2s, 4s, 8s...)
                 let exponentialDelay =
                     config.RetryDelayMs
                     * int (Math.Pow(2.0, float attempt))
@@ -183,9 +191,11 @@ module Neo4j =
                 let delay =
                     min config.MaxRetryDelayMs exponentialDelay
 
+                // Add random jitter (0-25% of delay) to prevent thundering herd
                 let jitter = RandomGen.next 0 (delay / 4)
                 delay + jitter
 
+            // Recursive function implements retry loop with immutable state
             let rec attemptWithRetry (state: RetryState) =
                 async {
                     try
@@ -204,6 +214,7 @@ module Neo4j =
 
                         let newState =
                             { Attempt = state.Attempt + 1
+                              // Option.orElse keeps first exception if already set
                               FirstException = state.FirstException |> Option.orElse (Some ex)
                               TotalDelayMs = state.TotalDelayMs + delay }
 
@@ -324,6 +335,7 @@ module Neo4j =
         async {
             match Validation.validateQuery query, Validation.validateMaxResults maxResults with
             | Ok validQuery, Ok validMax ->
+                // ResizeArray is F#'s alias for .NET List<T> - more efficient than F# list for building
                 let results = ResizeArray<'T>(validMax)
                 let mutable count = 0
 
@@ -364,6 +376,8 @@ module Neo4j =
         }
 
     /// Public query execution functions returned by factory
+    /// Abstract class pattern allows us to hide implementation details while providing
+    /// a clean interface. Object expression below creates an anonymous implementation.
     [<AbstractClass>]
     type QueryExecutors() =
         abstract member StreamQuery: string -> (IRecord -> Async<unit>) -> Async<Result<unit, AppError>>
@@ -371,6 +385,8 @@ module Neo4j =
 
     /// Create query executors with captured database context
     let createQueryExecutors session breaker config =
+        // Object expression creates an instance of the abstract class inline
+        // This captures session, breaker, and config in closure for all methods
         { new QueryExecutors() with
             member _.StreamQuery query processRecord =
                 executeQueryStreaming session breaker config query processRecord

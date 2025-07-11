@@ -26,11 +26,15 @@ open System
 
 /// Tracks export statistics per label during the export process
 module LabelStatsTracker =
+    // Discriminated union represents mutually exclusive states in a type-safe way
+    // Each label can only be in one of these states at any time
     type private LabelState =
         | NotStarted
         | InProgress of startTime: DateTime * recordCount: int64 * bytesWritten: int64
         | Completed of stats: FileLevelStatistics
 
+    // Private record field prevents direct state manipulation, enforcing
+    // state transitions through module functions only
     type Tracker =
         private
             { states: Map<string, LabelState> }
@@ -89,6 +93,9 @@ module LabelStatsTracker =
     let completeAllInProgress (tracker: Tracker) : Tracker =
         tracker.states
         |> Map.toList
+        // fold processes each item sequentially, threading the accumulator (currentTracker)
+        // through each iteration. This ensures state changes from previous iterations
+        // are visible to subsequent ones
         |> List.fold
             (fun currentTracker (label, state) ->
                 match state with

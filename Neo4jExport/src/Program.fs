@@ -24,7 +24,6 @@ namespace Neo4jExport
 
 open System
 
-/// Application entry point and workflow coordination
 module Program =
 
     let private loadConfiguration () =
@@ -51,19 +50,21 @@ module Program =
             try
                 Workflow.runExport context config
                 |> Async.RunSynchronously
+                // 'function' is shorthand for creating a lambda with pattern matching
+                // Equivalent to: fun result -> match result with ...
                 |> function
                     | Ok() ->
                         Log.info "Export completed successfully"
-                        0
+                        0  // Unix convention: 0 indicates success
                     | Error err -> Workflow.handleError err
             with
             | :? OperationCanceledException ->
                 Log.warn "Export cancelled by user"
-                130
+                130  // Unix convention: 128 + signal number (SIGINT = 2)
             | ex ->
                 Log.fatal (sprintf "Unexpected error: %s" (ErrorAccumulation.exceptionToString ex))
                 Log.logException ex
-                1
+                1  // Generic error exit code
 
     let private performFinalCleanup (context: ApplicationContext) =
         try
@@ -80,7 +81,7 @@ module Program =
 
     [<EntryPoint>]
     let main argv =
-        use context = AppContext.create ()
+        let context = AppContext.create ()
 
         let signalRegistration =
             SignalHandling.registerHandlers context
@@ -89,7 +90,8 @@ module Program =
             let exitCode = executeMain context
             performFinalCleanup context
 
-            // Dispose signal registration if present
+            // Option.iter executes the function only if the Option contains Some value
+            // If signalRegistration is None, nothing happens (safe disposal pattern)
             signalRegistration
             |> Option.iter (fun reg -> reg.Dispose())
 
@@ -99,7 +101,6 @@ module Program =
             Log.logException ex
             performFinalCleanup context
 
-            // Dispose signal registration if present
             signalRegistration
             |> Option.iter (fun reg -> reg.Dispose())
 

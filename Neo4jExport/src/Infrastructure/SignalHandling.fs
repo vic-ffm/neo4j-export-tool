@@ -41,6 +41,8 @@ module SignalHandling =
                 AppContext.cancel context
                 args.Cancel <- true)
 
+// PosixSignalRegistration was introduced in .NET 6
+// Earlier versions require reflection-based fallback
 #if NET6_0_OR_GREATER
         let sigtermRegistration =
             PosixSignalRegistration.Create(
@@ -53,6 +55,8 @@ module SignalHandling =
 
         Some(sigtermRegistration :> IDisposable)
 #else
+        // Use reflection to access PosixSignalRegistration if available
+        // This provides SIGTERM handling on .NET 5.0 with newer runtime
         let registerSigtermFallback () =
             try
                 let posixSignalType =
@@ -84,7 +88,6 @@ module SignalHandling =
 
                         Log.debug "SIGTERM handler registered via reflection"
 
-                        // Check if the result implements IDisposable
                         match registration with
                         | :? IDisposable as disposable -> Some disposable
                         | _ -> None
@@ -95,8 +98,8 @@ module SignalHandling =
                     Log.debug "PosixSignalRegistration types not available"
                     None
             with ex ->
-                // Infrastructure failure - app works without SIGTERM handling
-                // Log for diagnostics but don't create AppError (no caller to handle it)
+                // SIGTERM handling is optional enhancement - export functionality remains intact
+                // without it. Logging provides diagnostics without failing the application
                 Log.debug (sprintf "Could not register SIGTERM handler: %s" (ErrorAccumulation.exceptionToString ex))
                 None
 

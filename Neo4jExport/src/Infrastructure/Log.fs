@@ -36,10 +36,13 @@ module Log =
     let private scriptName =
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Name
 
+    // Mutable state allows runtime configuration of log verbosity
+    // without requiring dependency injection or complex initialization
     let mutable private minLevel = LogLevel.Info
+    // Console operations are not thread-safe - this lock prevents
+    // interleaved output when multiple threads log simultaneously
     let private consoleLock = obj ()
 
-    /// Sets the minimum log level from a string value
     let setMinLevel levelStr =
         minLevel <-
             match levelStr with
@@ -80,6 +83,8 @@ module Log =
                     | LogLevel.Fatal -> ConsoleColor.Magenta
 
                 Console.ForegroundColor <- color
+                // Use stderr (eprintfn) to keep stdout clean for data output
+                // This allows piping/redirecting export data without log pollution
                 eprintfn "[%s] [%s] [%s] %s" timestamp levelStr scriptName message
                 Console.ResetColor())
 

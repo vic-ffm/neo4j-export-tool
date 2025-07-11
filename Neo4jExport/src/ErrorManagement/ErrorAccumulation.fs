@@ -27,6 +27,8 @@ open System.Collections.Generic
 
 module ErrorAccumulation =
     /// Opaque type for accumulating errors
+    /// The private constructor ensures errors can only be accumulated through module functions,
+    /// preventing invalid states like empty error lists
     type ErrorAccumulator = private ErrorAccumulator of NonEmptyList<AppError>
 
     // --- Utility Functions  ---
@@ -101,6 +103,8 @@ module ErrorAccumulation =
     /// Extract errors from a list of Results
     let fromResults (results: Result<'a, AppError> list) : ErrorAccumulator option =
         results
+        // List.choose applies the function and keeps only Some values, discarding None
+        // The 'function' keyword is shorthand for pattern matching lambdas
         |> List.choose (function
             | Error e -> Some e
             | Ok _ -> None)
@@ -133,6 +137,8 @@ module ErrorAccumulation =
     /// Convert to AppError (single error or AggregateError)
     let toAppError (ErrorAccumulator nel) : AppError =
         match nel with
+        // NonEmptyList pattern matches on (head, tail) structure
+        // If tail is empty, we have exactly one error
         | NonEmptyList(single, []) -> single
         | many -> AggregateError many
 

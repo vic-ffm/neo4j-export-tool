@@ -39,6 +39,8 @@ module Metadata =
         | JsonSerializationFailure of dataType: string * error: string
 
     /// For semantic comparison
+    /// Creates unique keys for warning deduplication - warnings with the same key
+    /// are considered semantically equivalent regardless of error message details
     let warningKey =
         function
         | ConnectionFailure(phase, _) -> sprintf "conn_%s" phase
@@ -46,10 +48,11 @@ module Metadata =
         | DataMissing dataType -> sprintf "missing_%s" dataType
         | JsonSerializationFailure(dataType, _) -> sprintf "json_%s" dataType
 
-    // New parameter-reduced functions for Phase 10
     let private collectDatabaseInfo (queryExecutors: Neo4j.QueryExecutors) =
         async {
             let info = Dictionary<string, JsonValue>()
+            // Mutable list accumulates warnings without failing the operation
+            // This allows metadata collection to continue even if some queries fail
             let mutable warnings = []
 
             try
@@ -175,7 +178,7 @@ module Metadata =
                 let mutable warnings = []
 
                 let jsonConversionError =
-                    JString "serialization_error" // A sensible default
+                    JString "serialization_error"
 
                 // Helper to handle JSON conversion warnings
                 let toJsonValueWithWarning obj =
@@ -233,7 +236,6 @@ module Metadata =
                 return Ok(schema :> IDictionary<string, JsonValue>), warnings
         }
 
-    // Add version parsing function
     let parseNeo4jVersion (versionString: string) : Neo4jVersion =
         match versionString with
         | null
@@ -244,7 +246,6 @@ module Metadata =
         | v when v.StartsWith("6.") -> V6x
         | _ -> Unknown
 
-    // Add helper to extract major.minor version
     let extractVersionComponents (versionString: string) : (int * int) option =
         match versionString.Split('.') with
         | parts when parts.Length >= 2 ->
@@ -259,6 +260,7 @@ module Metadata =
         (errorFuncs: ErrorTracking.ErrorTrackingFunctions)
         =
         warnings
+        // Group warnings by their semantic key to identify duplicates
         |> List.groupBy warningKey
         |> List.map (fun (_, group) ->
             match group with
@@ -276,12 +278,13 @@ module Metadata =
                         sprintf "JSON serialization failed for %s (occurred %d times): %s" dataType count err
 
                 Some message)
+        // List.choose filters out None values, keeping only Some values unwrapped
         |> List.choose id
         |> List.iter (fun msg ->
             Log.warn msg
             errorFuncs.TrackWarning msg None None)
 
-    /// New public collect function with reduced parameters
+    /// Collects metadata from the database
     let collect
         (appContext: ApplicationContext)
         (queryExecutors: Neo4j.QueryExecutors)
@@ -291,24 +294,24 @@ module Metadata =
         async {
             Log.info "Collecting metadata..."
 
-            // Collect with warnings
+            // Collect with warnings - each function returns (Result, WarningList) tuple
+            // This pattern allows metadata collection to proceed even when individual queries fail
             let! dbInfoResult = collectDatabaseInfo queryExecutors
             let! statsResult = collectStatistics queryExecutors
             let! schemaResult = collectSchema queryExecutors config.SkipSchemaCollection
 
-            // Extract results and warnings
+            // Extract results and warnings from tuples
             let dbInfo, dbWarnings = dbInfoResult
             let stats, statsWarnings = statsResult
             let schema, schemaWarnings = schemaResult
 
-            // Accumulate all warnings
+            // Accumulate all warnings from different collection phases
             let allWarnings =
                 [ dbWarnings
                   statsWarnings
                   schemaWarnings ]
                 |> List.concat
 
-            // Single deduplication and flush
             deduplicateAndFlush allWarnings errorContext.Funcs
 
             match dbInfo, stats, schema with
@@ -348,7 +351,6 @@ module Metadata =
                       ExpectedRatio = Some 0.3
                       Suffix = ".jsonl.zst" }
 
-                // Extract version string for parsing
                 let versionString =
                     match db.TryGetValue("version") with
                     | true, value ->
@@ -360,7 +362,7 @@ module Metadata =
                 let fullMetadata =
                     { FormatVersion = FORMAT_VERSION
                       ExportMetadata =
-                        { ExportId = errorContext.ExportId // Use the exportId from context
+                        { ExportId = errorContext.ExportId
                           ExportTimestampUtc = DateTime.UtcNow
                           ExportMode = "native_driver_streaming"
                           Format = None }
@@ -411,12 +413,11 @@ module Metadata =
                               Padding = None }
                       PaginationPerformance = None }
 
-                // Parse version before returning
                 let parsedVersion =
                     parseNeo4jVersion versionString
 
                 Log.info "Metadata collection completed"
-                return Ok(fullMetadata, parsedVersion) // Return tuple
+                return Ok(fullMetadata, parsedVersion)
             | Error e, _, _ -> return Error e
             | _, Error e, _ -> return Error e
             | _, _, Error e -> return Error e
@@ -477,11 +478,12 @@ module Metadata =
                 jsonOptions
             )
 
-        let perLabelOverhead = 500
-        let generalBuffer = 4096
-        let recordTypesSize = 2000
-        let compressionSize = 500
-        let compatibilitySize = 300
+        // Conservative estimates for dynamic content that will be added later
+        let perLabelOverhead = 500    // Space for per-label statistics
+        let generalBuffer = 4096      // General padding for unexpected growth
+        let recordTypesSize = 2000    // Space for record type definitions
+        let compressionSize = 500     // Compression metadata
+        let compatibilitySize = 300   // Compatibility information
 
         let estimatedSize =
             currentMetadataBytes.Length
@@ -490,11 +492,13 @@ module Metadata =
             + recordTypesSize
             + compressionSize
             + compatibilitySize
-            + 1024
+            + 1024  // Additional safety margin
 
+        // Add 20% margin for safety
         let withMargin =
             int (float estimatedSize * 1.2)
 
+        // Round up to nearest power-of-2-friendly size for efficient memory allocation
         match withMargin with
         | s when s < 16384 -> 16384
         | s when s < 32768 -> 32768

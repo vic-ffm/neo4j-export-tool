@@ -34,6 +34,9 @@ module JsonConfig =
         let options = JsonSerializerOptions()
         options.WriteIndented <- false
         options.DefaultIgnoreCondition <- JsonIgnoreCondition.WhenWritingNull
+        // UnsafeRelaxedJsonEscaping prevents HTML-encoding of characters like < > & " '
+        // This ensures exported data matches exactly what's stored in Neo4j, preserving
+        // fidelity for downstream systems that expect unmodified data
         options.Encoder <- JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         options
 
@@ -45,6 +48,9 @@ module JsonConfig =
         )
 
     let toSerializableMetadata (metadata: FullMetadata) =
+        // Anonymous records ({| ... |}) create lightweight, one-off types perfect for
+        // JSON serialization without defining explicit type declarations. The compiler
+        // infers the shape and System.Text.Json serializes the properties directly
         {| export_metadata = metadata.ExportMetadata
            source_system = metadata.SourceSystem
            database_statistics =
@@ -61,6 +67,9 @@ module JsonConfig =
 
 
     let calculateDirectPaddingBytes (baseMetadataSize: int) (targetSize: int) : Result<int, string> =
+        // Padding ensures the metadata line reaches a predictable byte size, enabling
+        // efficient seeking in large files without parsing. The overhead accounts for
+        // the JSON property syntax when padding is added
         let jsonOverhead = 13 // ,"padding":""
 
         let availableSpace =

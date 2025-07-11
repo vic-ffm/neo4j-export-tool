@@ -28,21 +28,18 @@ open System.Collections.Concurrent
 
 /// Application context management for lifecycle and resource tracking
 module AppContext =
-    /// Creates a new application context with initialized resources
     let create () =
         { CancellationTokenSource = new CancellationTokenSource()
+          // ConcurrentBag provides thread-safe collection for cleanup tracking
+          // Multiple threads can safely add resources without synchronization
           TempFiles = new ConcurrentBag<string>()
           ActiveProcesses = new ConcurrentBag<Process>() }
 
-    /// Gets the cancellation token from the context
     let getCancellationToken (context: ApplicationContext) = context.CancellationTokenSource.Token
 
-    /// Checks if cancellation has been requested
     let isCancellationRequested (context: ApplicationContext) = CancellationOperations.check context
 
-    /// Requests cancellation of all operations
     let cancel (context: ApplicationContext) =
         context.CancellationTokenSource.Cancel()
 
-    /// Registers a temporary file for cleanup
     let addTempFile (context: ApplicationContext) (path: string) = context.TempFiles.Add(path)

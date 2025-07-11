@@ -40,6 +40,9 @@ module JsonHelpers =
         match obj with
         | null -> Ok JNull
         | :? string as s -> Ok(JString s)
+        // Converting all numeric types to decimal ensures consistent JSON number representation
+        // JSON doesn't distinguish between int/float/decimal, so this unification prevents
+        // type-related serialization issues while maintaining numeric precision
         | :? int as i -> Ok(JNumber(decimal i))
         | :? int64 as l -> Ok(JNumber(decimal l))
         | :? decimal as d -> Ok(JNumber d)
@@ -68,11 +71,15 @@ module JsonHelpers =
         | :? Duration as dur -> Ok(JString(dur.ToString()))
         | :? OffsetTime as ot -> Ok(JString(ot.ToString()))
         | :? IDictionary<string, obj> as d ->
+            // Transform dictionary entries while preserving error information
+            // Each value conversion can fail, so we collect Results
             d
             |> Seq.map (fun kvp ->
                 match toJsonValue kvp.Value with
                 | Ok v -> Ok(kvp.Key, v)
                 | Error e -> Error e)
+            // fold accumulates Results, short-circuiting on first error
+            // This ensures we either convert all values or report the first failure
             |> Seq.fold
                 (fun acc curr ->
                     match acc, curr with
@@ -110,14 +117,12 @@ module JsonHelpers =
 
             defaultValue
 
-    /// Extract string value from JsonValue - Result version
     let tryGetString (value: JsonValue) : Result<string, string> =
         match value with
         | JString s -> Ok s
         | _ -> Error "Value is not a string"
 
 
-    /// Extract int64 value from JsonValue - Result version
     let tryGetInt64 (value: JsonValue) : Result<int64, string> =
         match value with
         | JNumber n ->
@@ -147,7 +152,8 @@ module JsonHelpers =
             |> List.toArray
             |> box
 
-    /// Write JsonValue directly to Utf8JsonWriter for optimal performance
+    // Recursively serializes JsonValue tree structure to Utf8JsonWriter
+    // The 'rec' keyword enables self-referential calls for nested objects/arrays
     let rec writeJsonValue (writer: Utf8JsonWriter) (value: JsonValue) =
         match value with
         | JNull -> writer.WriteNullValue()

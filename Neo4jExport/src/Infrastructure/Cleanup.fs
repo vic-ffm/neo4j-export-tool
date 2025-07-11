@@ -37,10 +37,14 @@ module Cleanup =
                 if not proc.HasExited then
                     let mutable exited = false
 
+                    // Attempt graceful shutdown first for processes with UI windows
+                    // This allows processes to save state and clean up resources
                     if proc.MainWindowHandle <> System.IntPtr.Zero then
                         proc.CloseMainWindow() |> ignore
                         exited <- proc.WaitForExit(5000)
 
+                    // Force termination only if graceful shutdown failed
+                    // Prevents zombie processes from accumulating
                     if not exited && not proc.HasExited then
                         proc.Kill()
                         Log.debug (sprintf "Forcefully terminated process: %d" proc.Id)
@@ -62,5 +66,11 @@ module Cleanup =
                     Log.debug (sprintf "Deleted temp file: %s" file)
             with ex ->
                 Log.warn (sprintf "Failed to delete temp file %s: %s" file (ErrorAccumulation.exceptionToString ex))
+
+        try
+            context.CancellationTokenSource.Dispose()
+            Log.debug "Disposed CancellationTokenSource"
+        with ex ->
+            Log.warn (sprintf "Failed to dispose CancellationTokenSource: %s" (ErrorAccumulation.exceptionToString ex))
 
         Log.info "Cleanup completed"

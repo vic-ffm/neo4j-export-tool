@@ -68,7 +68,6 @@ do
 
     SerializationGraphElements.serializePathFunc <- Some(fun writer ctx path -> serializePath writer ctx path)
 
-/// Re-export main functions for use in Export.fs
 let writeNode =
     SerializationGraphElements.writeNode
 

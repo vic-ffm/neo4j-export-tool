@@ -24,6 +24,8 @@ module Neo4jExport.RecordTypes
 
 open Neo4jExport
 
+// Defines the schema for each record type in the JSONL export format
+// These definitions ensure consistent structure across all exported records
 let standardRecordTypes: RecordTypeDefinition list =
     [ { TypeName = "node"
         Description = "A graph node with labels and properties"

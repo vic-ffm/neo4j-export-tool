@@ -35,10 +35,15 @@ module Configuration =
     let generateMetadataFilename (outputDir: string) (metadata: FullMetadata) =
         let dbName =
             metadata.SourceSystem.Database.Name
+            // Sanitize filename to prevent filesystem issues - only allow alphanumeric and underscore
             |> String.filter (fun c -> Char.IsLetterOrDigit c || c = '_')
+            // Limit length for filesystem compatibility and readability
             |> fun s -> if s.Length > 20 then s.Substring(0, 20) else s
+            // Provide fallback name if database name is empty after sanitization
             |> fun s -> if String.IsNullOrWhiteSpace(s) then "export" else s
 
+        // Extract node count from stats dictionary, defaulting to 0 if not found or unparseable
+        // TryGetValue returns a tuple of (bool * value) for safe dictionary access
         let nodeCount =
             match metadata.DatabaseStatistics.TryGetValue("nodeCount") with
             | true, value ->
@@ -149,7 +154,8 @@ module Configuration =
             let maxLabelsInPathCompactStr =
                 Utils.getEnvVar Env.MAX_LABELS_IN_PATH_COMPACT (string Defaults.MaxLabelsInPathCompact)
 
-            /// Each validation returns Result<ValidatedField, string> for type-safe extraction later
+            // Build validation list where each tuple contains (field_name, validation_result)
+            // This pattern allows us to collect all validation errors at once rather than failing on first error
             let validations =
                 [ ("uri", validateUri uriStr)
                   ("outputDir", validateOutputDirectory outputPath)
@@ -184,18 +190,22 @@ module Configuration =
 
             match validateAll validations with
             | Error errors ->
+                // Transform string errors into AppError type hierarchy
                 let appErrors =
                     errors |> List.map ConfigError
 
+                // Ensure we always return at least one error (NonEmptyList enforces this constraint)
                 match NonEmptyList.ofList appErrors with
                 | Some nel -> Error(AggregateError nel)
                 | None -> Error(ConfigError "Unknown validation error")
 
             | Ok fields ->
+                // Extract validated fields using type-safe accessors
+                // Each getter enforces the correct type at compile time
                 Ok
                     { Uri = getUri fields "uri"
-                      User = user // No validation needed
-                      Password = password // No validation needed
+                      User = user
+                      Password = password
                       OutputDirectory = getString fields "outputDir"
                       MinDiskGb = getInt64 fields "minDiskGb"
                       MaxMemoryMb = getInt64 fields "maxMemoryMb"

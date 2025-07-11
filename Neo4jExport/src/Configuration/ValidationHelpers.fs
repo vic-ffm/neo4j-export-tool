@@ -26,6 +26,8 @@ open System
 
 module internal ConfigurationValidationHelpers =
     /// Wrapper type to preserve type information through validation
+    /// This discriminated union ensures validated values maintain their types
+    /// throughout the validation pipeline rather than becoming generic objects
     type ValidatedField =
         | VUri of Uri
         | VString of string
@@ -37,6 +39,7 @@ module internal ConfigurationValidationHelpers =
     let validateAll
         (validations: (string * Result<ValidatedField, string>) list)
         : Result<Map<string, ValidatedField>, string list> =
+        // First collect all errors using List.choose to filter out Ok results
         let errors =
             validations
             |> List.choose (fun (_, result) ->
@@ -44,6 +47,8 @@ module internal ConfigurationValidationHelpers =
                 | Error e -> Some e
                 | _ -> None)
 
+        // Only build the success map if there are no errors
+        // This ensures all-or-nothing validation semantics
         if List.isEmpty errors then
             validations
             |> List.choose (fun (name, result) ->
@@ -61,6 +66,8 @@ module internal FieldExtractors =
     /// Extracts a Uri from the validated fields map, failing if the key is missing or has wrong type
     /// This pattern ensures compile-time type safety when building the configuration
     let getUri (fields: Map<string, ValidatedField>) (key: string) : Uri =
+        // The failwith is intentional here - these should never fail in production
+        // because validateAll ensures all required fields exist with correct types
         match fields.[key] with
         | VUri uri -> uri
         | _ -> failwith (sprintf "Invalid field type for %s" key)

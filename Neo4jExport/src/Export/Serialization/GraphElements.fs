@@ -157,7 +157,6 @@ let internal writeNodeDirect
     writer.WriteEndObject()
 
 let writeNode (writer: Utf8JsonWriter) (node: INode) (elementId: string) (stableId: string) (ctx: WriterContext) =
-    // Delegate to the direct implementation for code reuse
     writeNodeDirect writer elementId stableId node.Labels node.Properties ctx
 
 /// Internal high-performance relationship serialization that works directly with primitive data
@@ -194,7 +193,6 @@ let internal writeRelationshipDirect
     writer.WriteEndObject()
 
 let writeRelationship (writer: Utf8JsonWriter) (rel: IRelationship) (ids: EntityIdsWithStable) (ctx: WriterContext) =
-    // Delegate to the direct implementation for code reuse
     writeRelationshipDirect writer rel.Type rel.Properties ids ctx
 
 let serializeGraphElement

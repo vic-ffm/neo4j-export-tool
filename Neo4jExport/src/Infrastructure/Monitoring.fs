@@ -30,8 +30,11 @@ type ResourceMonitor(monitoringCtx: MonitoringContext) =
     let checkInterval =
         TimeSpan.FromSeconds(30.0)
 
+    // MailboxProcessor is F#'s actor pattern implementation - it processes messages
+    // sequentially in its own async context, ensuring thread-safe state management
     let agent =
         MailboxProcessor.Start(fun inbox ->
+            // Recursive loop maintains the agent's state between message processing
             let rec loop (state: ResourceState) =
                 async {
                     if
@@ -53,6 +56,7 @@ type ResourceMonitor(monitoringCtx: MonitoringContext) =
                                 { state with
                                     LastCheck = DateTime.UtcNow }
                     else
+                        // TryReceive waits up to 1 second for a message, preventing busy-waiting
                         let! msgOpt = inbox.TryReceive(1000)
 
                         match msgOpt with

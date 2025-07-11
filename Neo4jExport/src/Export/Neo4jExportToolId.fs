@@ -33,9 +33,11 @@ open System.Text.Json.Serialization
 module Neo4jExportToolId =
 
     // Reusable SHA256 instance - thread-safe per .NET docs
+    // Creating once and reusing avoids repeated cryptographic initialization overhead
     let private sha256 = SHA256.Create()
 
     // JSON options for canonical serialization - create once
+    // Canonical form ensures identical objects always produce the same JSON string
     let private jsonOptions =
         let options = JsonSerializerOptions()
         options.DefaultIgnoreCondition <- JsonIgnoreCondition.WhenWritingNull
@@ -43,11 +45,17 @@ module Neo4jExportToolId =
         options
 
     // Convert byte to hex chars without allocation
+    // inline expands this function at call sites for performance
+    // CompiledName attribute controls the .NET method name for interop
     [<CompiledName("ByteToHexChars")>]
     let inline private byteToHexChars (b: byte) =
+        // >>> is unsigned right shift, extracting high nibble (4 bits)
         let high = int b >>> 4
+        // &&& is bitwise AND, masking to get low nibble
         let low = int b &&& 0xF
 
+        // Convert to hex chars: 0-9 = ASCII 48-57, a-f = ASCII 97-102
+        // This avoids string allocation compared to ToString("x2")
         let highChar =
             if high < 10 then char (high + 48) else char (high + 87)
 
@@ -56,7 +64,6 @@ module Neo4jExportToolId =
 
         highChar, lowChar
 
-    // Optimized hash computation with hex conversion
     [<CompiledName("ComputeSha256Hex")>]
     let private computeSha256Hex (input: string) =
         let bytes = Encoding.UTF8.GetBytes(input)
@@ -74,7 +81,9 @@ module Neo4jExportToolId =
 
         String(chars)
 
-    // Convert JsonValue to System.Text.Json compatible structure
+    // Recursively convert JsonValue discriminated union to objects for serialization
+    // 'rec' enables self-recursion for nested structures
+    // 'box' converts value types to obj (F#'s object type)
     let rec private convertToJsonElement (value: JsonValue) =
         match value with
         | JString s -> box s
@@ -92,7 +101,6 @@ module Neo4jExportToolId =
             |> List.toArray
             |> box
 
-    // Efficient property canonicalization
     [<CompiledName("CanonicalizeProperties")>]
     let private canonicalizeProperties (properties: IDictionary<string, obj>) =
         if properties.Count = 0 then
@@ -118,7 +126,6 @@ module Neo4jExportToolId =
 
             JsonSerializer.Serialize(sorted, jsonOptions)
 
-    // Generate stable ID for nodes
     [<CompiledName("GenerateNodeId")>]
     let generateNodeId (labels: string seq) (properties: IDictionary<string, obj>) =
         // Sort labels for deterministic output
@@ -134,7 +141,6 @@ module Neo4jExportToolId =
 
         computeSha256Hex hashInput
 
-    // Generate stable ID for relationships
     [<CompiledName("GenerateRelationshipId")>]
     let generateRelationshipId
         (relType: string)
@@ -167,7 +173,6 @@ module Neo4jExportToolId =
 
         computeSha256Hex hashInput
 
-    // Validation helpers
     let isValidStableId (id: string) =
         not (String.IsNullOrEmpty(id))
         && id.Length = 64

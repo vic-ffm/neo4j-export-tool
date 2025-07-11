@@ -32,13 +32,11 @@ open Capabilities
 /// Main workflow orchestration for the export process
 /// Factory functions for workflow contexts and operations
 module WorkflowFactories =
-    /// Create monitoring context from app context and config
     let createMonitoringContext (appContext: ApplicationContext) (config: ExportConfig) =
         { AppContext = appContext
           OutputDirectory = config.OutputDirectory
           MinDiskGb = config.MinDiskGb }
 
-    /// Create workflow context from all components
     let createWorkflowContext app config session metadata errorFuncs version : WorkflowContext<SafeSession> =
         let errorContext =
             ErrorContext.create metadata.ExportMetadata.ExportId errorFuncs
@@ -53,7 +51,6 @@ module WorkflowFactories =
             { Stats = initialStats
               LineState = LineTracking.create () }
 
-        // NEW: Create operations
         let workflowOps =
             WorkflowOperations.create app config
 
@@ -65,14 +62,14 @@ module WorkflowFactories =
               Progress = progressContext
               Config = config
               AppContext = app
-              Workflow = workflowOps // NEW
-              Reporting = Some progressOps } // NEW
+              Workflow = workflowOps
+              Reporting = Some progressOps }
 
         { App = app
           Export = exportContext
           Session = session
           Metadata = metadata
-          Neo4jVersion = version } // ADD THIS LINE
+          Neo4jVersion = version }
 
 module Workflow =
     open Neo4jExport.ExportTypes
@@ -100,7 +97,6 @@ module Workflow =
         | AggregateError _ -> 6
 
     /// Prepare export file with metadata placeholder
-    /// Now accepts WorkflowContext for access to all operations
     let private prepareExportFile (workflowCtx: WorkflowContext<'T>) =
         async {
             let config = workflowCtx.Export.Config
@@ -118,7 +114,6 @@ module Workflow =
                         (Path.GetRandomFileName())
                 )
 
-            // Use WorkflowOperations instead of direct call
             workflowCtx.Export.Workflow.RegisterTempFile finalTempFile
 
             let finalStream =
@@ -132,10 +127,12 @@ module Workflow =
                 )
 
             try
-                // Write metadata placeholder
                 let placeholderSize =
                     Metadata.estimateMaxMetadataSize config metadata
 
+                // Reserve space at the beginning of the file for metadata
+                // This allows writing data in a single pass, then seeking back
+                // to write the final metadata with accurate statistics
                 let placeholder =
                     Array.create placeholderSize (byte ' ')
 
@@ -164,18 +161,15 @@ module Workflow =
         async {
             Log.debug (sprintf "Creating export processors for Neo4j version: %A" workflowCtx.Neo4jVersion)
             
-            // Create processors
             let nodeProcessor =
                 ExportCore.ExportProcessors.createNodeProcessor workflowCtx.Neo4jVersion
 
             let relProcessor =
                 ExportCore.ExportProcessors.createRelationshipProcessor workflowCtx.Neo4jVersion
 
-            // Add version validation warning
             match workflowCtx.Neo4jVersion with
             | Unknown ->
                 Log.warn "Neo4j version could not be detected - using SKIP/LIMIT pagination (O(n²) performance degradation for large datasets)"
-                // Track this as a warning in error tracking
                 workflowCtx.Export.Error.Funcs.TrackWarning 
                     "Unknown Neo4j version - degraded pagination performance" 
                     None 
@@ -190,27 +184,23 @@ module Workflow =
                 exportState.Version 
                 exportState.NodeIdMapping.Count)
 
-            // Export nodes
             let! nodeResult =
                 ExportCore.exportNodesUnified workflowCtx.Session fileStream workflowCtx.Export exportState nodeProcessor
 
             match nodeResult with
             | Error e -> return Error e
             | Ok(nodeStats, labelStats, lineStateAfterNodes) ->
-                // Update export context with new progress state
                 let updatedExportContext =
                     { workflowCtx.Export with
                         Progress =
                             { Stats = nodeStats
                               LineState = lineStateAfterNodes } }
 
-                // Export relationships with updated context
                 match!
                     ExportCore.exportRelationships workflowCtx.Session fileStream updatedExportContext exportState relProcessor
                 with
                 | Error e -> return Error e
                 | Ok(finalStats, lineStateAfterRels) ->
-                    // Export any error/warning records if they exist
                     let mutable finalStatsWithErrors =
                         finalStats
 
@@ -240,7 +230,6 @@ module Workflow =
                     let exportDuration =
                         (DateTime.UtcNow - exportStartTime).TotalSeconds
                     
-                    // Extract performance metrics from ExportState
                     let nodePerfMetrics = 
                         let nodeStrategy = if exportState.Version = Unknown then SkipLimit 0 else Keyset(None, exportState.Version)
                         exportState.NodePerfTracker.GetMetrics(nodeStrategy)
@@ -249,7 +238,7 @@ module Workflow =
                         let relStrategy = if exportState.Version = Unknown then SkipLimit 0 else Keyset(None, exportState.Version)
                         exportState.RelPerfTracker.GetMetrics(relStrategy)
                     
-                    // Combine metrics (preferring node metrics as primary indicator)
+                    // Prefer node metrics as primary indicator
                     let combinedPerfMetrics = 
                         if nodePerfMetrics.TotalBatches > relPerfMetrics.TotalBatches then
                             Some nodePerfMetrics
@@ -285,7 +274,6 @@ module Workflow =
             let newlineBytes =
                 Encoding.UTF8.GetBytes(Environment.NewLine)
 
-            // Seek to beginning to write metadata
             fileStream.Seek(0L, SeekOrigin.Begin) |> ignore
 
             match
@@ -319,18 +307,15 @@ module Workflow =
         async {
             let exportStartTime = DateTime.UtcNow
 
-            // Prepare export file
             match! prepareExportFile workflowCtx with
             | Error e -> return Error e
             | Ok(tempFile, fileStream, placeholderSize, dataStartPosition) ->
                 try
-                    // Execute export
                     match! executeExport workflowCtx fileStream tempFile exportStartTime with
                     | Error e ->
                         fileStream.Dispose()
                         return Error e
                     | Ok exportResult ->
-                        // Finalize file
                         match!
                             finalizeExportFile
                                 workflowCtx
@@ -365,10 +350,10 @@ module Workflow =
             let! connectionResult =
                 driver.VerifyConnectivityAsync()
                 |> Async.AwaitTask
-                |> Async.Catch
+                |> Async.Catch  // Wraps result in Choice type to handle exceptions without throwing
 
             match connectionResult with
-            | Choice1Of2 _ ->
+            | Choice1Of2 _ ->  // Success case - no exception occurred
                 Log.info "Successfully connected to Neo4j"
 
                 use session =
@@ -377,7 +362,6 @@ module Workflow =
                 let breaker =
                     Neo4j.createCircuitBreaker 5 (TimeSpan.FromSeconds(30.0))
 
-                // Create monitoring context and start monitor
                 let monitoringCtx =
                     WorkflowFactories.createMonitoringContext context config
 
@@ -387,11 +371,11 @@ module Workflow =
                 // Generate exportId early for consistent tracking
                 let exportId = Guid.NewGuid()
 
-                // Create complete error tracking system with proper disposal
                 let errorFuncs =
                     ErrorTracking.createErrorTrackingSystem exportId
 
-                // Manual disposal tracking since F# records can't use 'use' binding
+                // try/finally ensures disposal even if workflow fails
+                // 'use' bindings only work with local values, not record fields
                 try
                     match! Preflight.initializeFileSystem config with
                     | Error e -> return Error e
@@ -399,7 +383,6 @@ module Workflow =
                         match! Preflight.runAllChecks context session breaker config with
                         | Error e -> return Error e
                         | Ok() ->
-                            // Create contexts for new parameter-reduced function
                             let queryExecutors =
                                 Neo4j.createQueryExecutors session breaker config
 
@@ -417,7 +400,6 @@ module Workflow =
                                 Log.info (sprintf "Export filename: %s" (System.IO.Path.GetFileName(finalFilename)))
                                 Log.info "Collecting detailed statistics for export manifest"
 
-                                // Create workflow context and execute export
                                 let workflowCtx =
                                     WorkflowFactories.createWorkflowContext
                                         context
@@ -430,5 +412,6 @@ module Workflow =
                                 return! performExport workflowCtx
                 finally
                     errorFuncs.Dispose()
-            | Choice2Of2 ex -> return Error(ConnectionError("Failed to connect to Neo4j", Some ex))
+            | Choice2Of2 ex ->  // Exception case - connectivity check failed
+                return Error(ConnectionError("Failed to connect to Neo4j", Some ex))
         }

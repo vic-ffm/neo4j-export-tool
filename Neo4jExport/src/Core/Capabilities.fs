@@ -30,6 +30,8 @@ module Capabilities =
 
     /// Groups workflow control operations
     /// Captures ApplicationContext and ExportConfig through closure
+    /// This pattern creates a "capability" - a record of functions that share common dependencies
+    /// Instead of passing context to every function, we capture it once during creation
     type WorkflowOperations =
         { IsCancellationRequested: unit -> bool
           RegisterTempFile: string -> unit
@@ -38,6 +40,8 @@ module Capabilities =
     module WorkflowOperations =
         /// Creates workflow operations with captured context
         let create (appContext: ApplicationContext) (config: ExportConfig) =
+            // Each function closes over the provided parameters, eliminating the need
+            // to pass appContext and config repeatedly throughout the codebase
             { IsCancellationRequested = fun () -> CancellationOperations.check appContext
               RegisterTempFile = fun path -> TempFileOperations.register appContext path
               GetConfig = fun () -> config }
@@ -52,10 +56,13 @@ module Capabilities =
     module ProgressOperations =
         /// Creates progress operations capturing common parameters
         let create (startTime: DateTime) (interval: TimeSpan) (stats: ExportProgress) =
+            // Using mutable state here is a pragmatic choice for performance - updating progress
+            // frequently would create excessive garbage if we created new records each time
             let mutable currentStats = stats
 
             { ReportProgress =
                 fun entityType current totalOpt ->
+                    // Update the mutable stats record in-place
                     currentStats <-
                         { currentStats with
                             RecordsProcessed = current }

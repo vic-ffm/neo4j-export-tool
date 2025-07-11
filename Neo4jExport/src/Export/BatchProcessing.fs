@@ -37,7 +37,6 @@ open Neo4jExport.ErrorDeduplication
 open Neo4jExport.Neo4jExportToolId
 open ErrorTracking
 
-// Stable ID validation using functional composition
 let private isValidStableId (id: string) =
     let isHexChar = function
         | c when c >= '0' && c <= '9' -> true
@@ -46,7 +45,6 @@ let private isValidStableId (id: string) =
     
     id.Length = 64 && id |> Seq.forall isHexChar
 
-/// Common progress reporting logic
 let reportProgress
     (stats: ExportProgress)
     (startTime: DateTime)
@@ -71,6 +69,8 @@ let private tryGetRelationship (record: IRecord) =
 
 let private tryExtractElementId (node: INode) =
     try
+        // struct tuples are value types, avoiding heap allocation in hot paths
+        // The (value, success) pattern avoids exceptions for control flow
         struct (node.ElementId, true)
     with _ ->
         struct ("", false)
@@ -107,9 +107,10 @@ let private truncateAndConvertTemporal (value: obj) : obj =
     | :? DateTimeOffset -> value
     
     // Neo4j temporal types - convert with truncation
-    | :? Neo4j.Driver.LocalDate as ld -> 
-        // LocalDate has no time component, so no truncation needed
-        box (DateTime(ld.Year, ld.Month, ld.Day, 0, 0, 0, DateTimeKind.Unspecified))
+    | :? Neo4j.Driver.LocalDate -> 
+        // LocalDate has no time component and doesn't need truncation
+        // Return unchanged to preserve date-only semantics
+        value
     
     | :? Neo4j.Driver.LocalTime as lt -> 
         // Keep as LocalTime but truncate nanoseconds to 100ns precision
@@ -139,7 +140,6 @@ let private truncateAndConvertTemporal (value: obj) : obj =
     
     | _ -> value
 
-/// Node processing logic with reduced parameters and stable ID generation
 let processNodeRecord (exportState: ExportState) (recordCtx: RecordContext<BatchErrorAccumulator>) (exportCtx: ExportContext) (record: IRecord) =
     let ctx =
         SerializationContext.createWriterContext exportCtx.Config exportCtx.Error.Funcs exportCtx.Error.ExportId
@@ -214,7 +214,6 @@ let processNodeRecord (exportState: ExportState) (recordCtx: RecordContext<Batch
     dataBytes, incrementStats recordCtx.Stats
 
 
-/// Relationship processing logic with reduced parameters and stable ID lookup
 let processRelationshipRecord
     (exportState: ExportState)
     (recordCtx: RecordContext<BatchErrorAccumulator>)
@@ -327,30 +326,29 @@ let processRelationshipRecord
     dataBytes, incrementStats recordCtx.Stats
 
 
-/// Factory functions for BatchContext
 module BatchContext =
-    /// Create batch context for full processing
     let createFull processor session fileStream bufferSize =
         { Processor = processor
           Session = session
           FileStream = fileStream
+          // ArrayBufferWriter provides efficient, reusable byte buffer for JSON serialization
+          // Avoids allocating new arrays for each record
           Buffer = new ArrayBufferWriter<byte>(bufferSize)
           NewlineBytes = Encoding.UTF8.GetBytes Environment.NewLine
+          // Error accumulator deduplicates errors within each batch to prevent log spam
           ErrorAccumulator = createAccumulator 100 }
 
-    /// Create record processing context
     let createRecordContext buffer errorAccumulator stats =
         { RecordContext.Buffer = buffer
           ErrorAccumulator = errorAccumulator
           Stats = stats }
 
-    /// Dispose of batch context resources
     let dispose (ctx: BatchContext<_>) = ctx.Buffer.Clear()
 
-/// Keyset pagination utilities
 module private KeysetPagination =
-
-    /// Extract ID from record for pagination
+    // Keyset pagination uses the last seen ID to fetch the next batch
+    // This is O(1) per batch vs O(n) for SKIP, making it essential for large datasets
+    // The approach differs between Neo4j versions due to ID system changes
     let extractId (version: Neo4jVersion) (entityType: string) (record: IRecord) : KeysetId option =
         try
             match version with
@@ -372,7 +370,6 @@ module private KeysetPagination =
             Log.warn $"Failed to extract ID from {entityType}: {ex.Message}"
             None
 
-    /// Update highest ID if new one is greater
     let updateHighest (current: KeysetId option) (newId: KeysetId option) : KeysetId option =
         match current, newId with
         | None, Some id -> Some id
@@ -380,6 +377,8 @@ module private KeysetPagination =
         | _ -> current
 
 /// Enhanced batch processing supporting both SKIP/LIMIT and keyset pagination
+/// Generic over handler state ('state) to allow different export scenarios to maintain
+/// their own state through the pagination process (e.g., label statistics tracking)
 let processBatchedQuery<'state>
     (batchCtx: BatchContext<BatchErrorAccumulator>)
     (exportCtx: ExportContext)
@@ -403,7 +402,7 @@ let processBatchedQuery<'state>
 
         let batchSize = exportCtx.Config.BatchSize
 
-        // Get total count if available (unchanged from current implementation)
+        // Get total count if available
         let! totalOpt =
             match batchCtx.Processor.GetTotalQuery with
             | Some query ->
@@ -442,6 +441,9 @@ let processBatchedQuery<'state>
                 
                 SkipLimit 0 // Otherwise use legacy SKIP/LIMIT
 
+        // Recursive function implements the pagination loop
+        // Each call processes one batch and decides whether to continue
+        // The 'rec' keyword enables self-recursion
         let rec processBatch
             (currentStats: ExportProgress)
             (lastProgress: DateTime)
@@ -449,9 +451,10 @@ let processBatchedQuery<'state>
             (currentHandlerState: 'state)
             =
             async {
-                // Start timing this batch
                 stopwatch.Restart()
                 
+                // Shadow the parameter with a mutable local for accumulation within the batch
+                // This avoids threading state through every record processing call
                 let mutable currentHandlerState =
                     currentHandlerState
 
@@ -501,7 +504,6 @@ let processBatchedQuery<'state>
                             | Keyset(lastId, _) -> lastId
                             | _ -> None
 
-                        // Clear accumulator at batch start
                         clearAccumulator batchCtx.ErrorAccumulator
 
                         while hasMore do
@@ -565,7 +567,6 @@ let processBatchedQuery<'state>
                             Log.info (sprintf "Batch performance - Strategy: %s, Avg time: %.2fms, Trend: %s" 
                                 metrics.Strategy metrics.AverageBatchTimeMs metrics.PerformanceTrend)
 
-                        // Flush accumulated errors
                         flushErrors batchCtx.ErrorAccumulator exportCtx.Error.Funcs (int64 recordCount)
 
                         if recordCount = 0 then

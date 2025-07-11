@@ -37,13 +37,14 @@ module Security =
             let sb =
                 StringBuilder(min str.Length maxLength)
 
+            // Track chars separately from string length since control chars expand to multiple chars
             let mutable charCount = 0
 
-            /// Count characters rather than bytes to handle escaped sequences correctly
             for c in str do
                 if charCount >= maxLength then
                     ()
                 elif Char.IsControl(c) then
+                    // Replace control characters with visible escape sequences to prevent log injection
                     match c with
                     | '\r' -> sb.Append("\\r") |> ignore
                     | '\n' -> sb.Append("\\n") |> ignore
@@ -68,8 +69,10 @@ module Security =
             Error(SecurityError "Path cannot be empty")
         else
             try
+                // GetFullPath validates and normalizes the path, throwing specific exceptions for various issues
                 Ok(Path.GetFullPath(path))
             with
+            // Pattern match on specific exception types that GetFullPath can throw
             | :? ArgumentException
             | :? ArgumentNullException
             | :? NotSupportedException

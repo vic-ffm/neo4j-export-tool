@@ -43,84 +43,86 @@ module Constants =
 
     /// Environment variable names
     module Env =
-        let Uri = "NEO4J_URI"
-        let User = "NEO4J_USER"
-        let Password = "NEO4J_PASSWORD"
-        let OutputDirectory = "OUTPUT_DIRECTORY"
-        let MinDiskGb = "MIN_DISK_GB"
-        let MaxMemoryMb = "MAX_MEMORY_MB"
+        let Uri = "N4JET_NEO4J_URI"
+        let User = "N4JET_NEO4J_USER"
+        let Password = "N4JET_NEO4J_PASSWORD"
+        let OutputDirectory = "N4JET_OUTPUT_DIRECTORY"
+        let MinDiskGb = "N4JET_MIN_DISK_GB"
+        let MaxMemoryMb = "N4JET_MAX_MEMORY_MB"
 
         let SkipSchemaCollection =
-            "SKIP_SCHEMA_COLLECTION"
+            "N4JET_SKIP_SCHEMA_COLLECTION"
 
-        let MaxRetries = "MAX_RETRIES"
-        let RetryDelayMs = "RETRY_DELAY_MS"
-        let MaxRetryDelayMs = "MAX_RETRY_DELAY_MS"
+        let MaxRetries = "N4JET_MAX_RETRIES"
+        let RetryDelayMs = "N4JET_RETRY_DELAY_MS"
+        let MaxRetryDelayMs = "N4JET_MAX_RETRY_DELAY_MS"
 
         let QueryTimeoutSeconds =
-            "QUERY_TIMEOUT_SECONDS"
+            "N4JET_QUERY_TIMEOUT_SECONDS"
 
-        let EnableDebugLogging = "DEBUG"
-        let ValidateJsonOutput = "VALIDATE_JSON"
-        let AllowInsecure = "ALLOW_INSECURE"
-        let BatchSize = "BATCH_SIZE"
+        let EnableDebugLogging = "N4JET_DEBUG"
+        let ValidateJsonOutput = "N4JET_VALIDATE_JSON"
+        let AllowInsecure = "N4JET_ALLOW_INSECURE"
+        let BatchSize = "N4JET_BATCH_SIZE"
 
         let AverageRecordSize =
-            "NEO4J_EXPORT_AVG_RECORD_SIZE"
+            "N4JET_NEO4J_EXPORT_AVG_RECORD_SIZE"
 
         let OverheadMultiplier =
-            "NEO4J_EXPORT_OVERHEAD_MULTIPLIER"
+            "N4JET_NEO4J_EXPORT_OVERHEAD_MULTIPLIER"
 
         let MinMemoryReservation =
-            "NEO4J_EXPORT_MIN_MEMORY_RESERVATION"
+            "N4JET_NEO4J_EXPORT_MIN_MEMORY_RESERVATION"
 
-        let JsonBufferSizeKb = "JSON_BUFFER_SIZE_KB"
+        let JsonBufferSizeKb = "N4JET_JSON_BUFFER_SIZE_KB"
 
         // Path serialization safety thresholds
+        // [<Literal>] attribute ensures these are compile-time constants, enabling
+        // their use in pattern matching and other contexts requiring const values
         [<Literal>]
-        let MAX_PATH_LENGTH = "MAX_PATH_LENGTH"
+        let MAX_PATH_LENGTH = "N4JET_MAX_PATH_LENGTH"
 
         [<Literal>]
         let PATH_FULL_MODE_LIMIT =
-            "PATH_FULL_MODE_LIMIT"
+            "N4JET_PATH_FULL_MODE_LIMIT"
 
         [<Literal>]
         let PATH_COMPACT_MODE_LIMIT =
-            "PATH_COMPACT_MODE_LIMIT"
+            "N4JET_PATH_COMPACT_MODE_LIMIT"
 
         [<Literal>]
         let PATH_PROPERTY_DEPTH =
-            "PATH_PROPERTY_DEPTH"
+            "N4JET_PATH_PROPERTY_DEPTH"
 
         // Nested graph element safety thresholds
         [<Literal>]
-        let MAX_NESTED_DEPTH = "MAX_NESTED_DEPTH"
+        let MAX_NESTED_DEPTH = "N4JET_MAX_NESTED_DEPTH"
 
         [<Literal>]
         let NESTED_SHALLOW_MODE_DEPTH =
-            "NESTED_SHALLOW_MODE_DEPTH"
+            "N4JET_NESTED_SHALLOW_MODE_DEPTH"
 
         [<Literal>]
         let NESTED_REFERENCE_MODE_DEPTH =
-            "NESTED_REFERENCE_MODE_DEPTH"
+            "N4JET_NESTED_REFERENCE_MODE_DEPTH"
 
         // Label truncation limits
         [<Literal>]
         let MAX_LABELS_PER_NODE =
-            "MAX_LABELS_PER_NODE"
+            "N4JET_MAX_LABELS_PER_NODE"
 
         [<Literal>]
         let MAX_LABELS_IN_REFERENCE_MODE =
-            "MAX_LABELS_IN_REFERENCE_MODE"
+            "N4JET_MAX_LABELS_IN_REFERENCE_MODE"
 
         [<Literal>]
         let MAX_LABELS_IN_PATH_COMPACT =
-            "MAX_LABELS_IN_PATH_COMPACT"
+            "N4JET_MAX_LABELS_IN_PATH_COMPACT"
 
         // Collection limits
         [<Literal>]
         let MAX_COLLECTION_ITEMS =
-            "MAX_COLLECTION_ITEMS"
+            "N4JET_MAX_COLLECTION_ITEMS"
 
     /// Default values for all configurable settings
     module Defaults =
@@ -141,6 +143,8 @@ module Constants =
         let BatchSize = 10000
         let ConservativeMemoryFallbackGb = 2L
 
+        // Convert GB to bytes for runtime memory calculations
+        // Using explicit multiplication for clarity over bit shifting
         let ConservativeMemoryFallback =
             ConservativeMemoryFallbackGb
             * 1024L
@@ -149,6 +153,7 @@ module Constants =
 
         let MinimumMemoryReservationMb = 100L
 
+        // Convert MB to bytes for runtime memory calculations
         let MinimumMemoryReservation =
             MinimumMemoryReservationMb * 1024L * 1024L
 

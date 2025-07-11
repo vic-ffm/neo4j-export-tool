@@ -30,8 +30,12 @@ open Neo4jExport
 open Neo4jExport.ExportTypes
 
 module StringOps =
+    // AggressiveInlining hints the JIT to inline this method at call sites
+    // Critical for hot path string operations to avoid function call overhead
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     let truncateSpan (maxLen: int) (span: ReadOnlySpan<char>) =
+        // ReadOnlySpan<char> provides zero-copy string slicing
+        // Avoids substring allocation when only checking length
         if span.Length <= maxLen then
             span.ToString()
         else
@@ -44,10 +48,8 @@ let computeSha256 (data: byte[]) =
     let hash = sha256.ComputeHash data
     Convert.ToBase64String hash
 
-/// Track unique keys within a JSON object to prevent duplicates
 let createKeyTracker () = HashSet<string>(StringComparer.Ordinal)
 
-/// Ensures property keys are unique by adding suffix if needed
 let ensureUniqueKey (key: string) (tracker: HashSet<string>) =
     let truncatedKey =
         if key.Length > 1000 then
@@ -55,9 +57,12 @@ let ensureUniqueKey (key: string) (tracker: HashSet<string>) =
         else
             key
 
+    // HashSet.Add returns true if the item was added (not a duplicate)
     if tracker.Add truncatedKey then
         truncatedKey
     else
+        // Tail-recursive function finds next available key by appending counter
+        // F# compiler optimizes tail recursion into a loop
         let rec findUniqueKey counter =
             let candidateKey =
                 sprintf "%s_%d" truncatedKey counter

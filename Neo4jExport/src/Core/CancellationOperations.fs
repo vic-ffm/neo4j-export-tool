@@ -26,6 +26,5 @@ open System
 
 /// Core cancellation operations extracted for early compilation
 module CancellationOperations =
-    /// Check if cancellation has been requested
     let check (context: ApplicationContext) =
         context.CancellationTokenSource.Token.IsCancellationRequested

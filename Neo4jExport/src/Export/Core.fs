@@ -34,9 +34,9 @@ open Neo4jExport.SerializationEngine
 open Neo4jExport.ExportBatchProcessing
 open ErrorTracking
 
-/// Query building functions that adapt to Neo4j version
 module QueryBuilders =
-    /// Build node query for current SKIP/LIMIT implementation
+    // Version-specific query builders handle differences between Neo4j 4.x (numeric IDs) 
+    // and 5.x+ (element IDs). This abstraction allows the export logic to remain version-agnostic.
     let buildNodeQuery (version: Neo4jVersion) =
         match version with
         | V4x -> "MATCH (n) RETURN n, labels(n) as labels, id(n) as nodeId ORDER BY id(n) SKIP $skip LIMIT $limit"
@@ -45,7 +45,6 @@ module QueryBuilders =
         | Unknown ->
             "MATCH (n) RETURN n, labels(n) as labels, elementId(n) as elementId ORDER BY elementId(n) SKIP $skip LIMIT $limit"
 
-    /// Build node query for future keyset pagination
     let buildNodeQueryKeyset (version: Neo4jVersion) (lastId: KeysetId option) =
         let whereClause = 
             match version, lastId with
@@ -85,7 +84,6 @@ module QueryBuilders =
             LIMIT $limit
             """ whereClause
 
-    /// Build relationship query for current SKIP/LIMIT implementation
     let buildRelationshipQuery (version: Neo4jVersion) =
         match version with
         | V4x -> "MATCH ()-[r]->() RETURN r, type(r) as type, id(r) as relId ORDER BY id(r) SKIP $skip LIMIT $limit"
@@ -94,7 +92,6 @@ module QueryBuilders =
         | Unknown ->
             "MATCH ()-[r]->() RETURN r, type(r) as type, elementId(r) as elementId ORDER BY elementId(r) SKIP $skip LIMIT $limit"
 
-    /// Build relationship query for future keyset pagination
     let buildRelationshipQueryKeyset (version: Neo4jVersion) (lastId: KeysetId option) =
         let whereClause = 
             match version, lastId with
@@ -138,7 +135,6 @@ module QueryBuilders =
             LIMIT $limit
             """ whereClause
 
-    /// Build query parameters based on pagination state
     let buildQueryParameters (lastId: KeysetId option) (batchSize: int) (skip: int option) =
         match lastId, skip with
         | None, None -> dict [ "limit", box batchSize ]
@@ -152,16 +148,11 @@ module QueryBuilders =
                   "limit", box batchSize ]
         | Some _, Some _ -> failwith "Cannot use both lastId and skip parameters"
 
-    /// Build count query for nodes
     let buildNodeCountQuery (_: Neo4jVersion) = "MATCH (n) RETURN count(n) as count"
 
-    /// Build count query for relationships
     let buildRelationshipCountQuery (_: Neo4jVersion) =
         "MATCH ()-[r]->() RETURN count(r) as count"
 
-    // Add these new functions to the existing QueryBuilders module:
-
-    /// Build query and parameters based on pagination strategy
     /// Note: This function needs the version from the processor to build correct queries
     let buildNodeQueryWithParams
         (version: Neo4jVersion)
@@ -170,7 +161,6 @@ module QueryBuilders =
         : string * IDictionary<string, obj> =
         match strategy with
         | SkipLimit skip ->
-            // Use the actual version to build the correct query
             let query = buildNodeQuery version
 
             let parameters =
@@ -181,7 +171,6 @@ module QueryBuilders =
             query, parameters
 
         | Keyset(lastId, version) ->
-            // Use the already implemented buildNodeQueryKeyset
             let query =
                 buildNodeQueryKeyset version lastId
 
@@ -190,7 +179,6 @@ module QueryBuilders =
 
             query, parameters
 
-    /// Similar function for relationships
     let buildRelationshipQueryWithParams
         (version: Neo4jVersion)
         (strategy: PaginationStrategy)
@@ -208,7 +196,6 @@ module QueryBuilders =
             query, parameters
 
         | Keyset(lastId, version) ->
-            // Use the already implemented buildRelationshipQueryKeyset
             let query =
                 buildRelationshipQueryKeyset version lastId
 
@@ -217,9 +204,7 @@ module QueryBuilders =
 
             query, parameters
 
-/// Factory functions for creating export processors
 module ExportProcessors =
-    /// Create processor for node export with version-specific queries
     let createNodeProcessor (version: Neo4jVersion) =
         match version with
         | Unknown ->
@@ -239,7 +224,6 @@ module ExportProcessors =
                 version
             )
 
-    /// Create processor for relationship export with version-specific queries
     let createRelationshipProcessor (version: Neo4jVersion) =
         match version with
         | Unknown ->
@@ -259,7 +243,6 @@ module ExportProcessors =
                 version
             )
 
-/// Unified node export with statistics
 let exportNodesUnified
     (session: SafeSession)
     (fileStream: FileStream)
@@ -276,6 +259,9 @@ let exportNodesUnified
                 |> LineTracking.recordTypeStart "node"
               LabelTracker = LabelStatsTracker.create () }
 
+        // Handler function is called for each record in the batch
+        // It threads state through the entire export process, accumulating label statistics
+        // The handler pattern enables different export scenarios without modifying core batch logic
         let nodeHandler (state: NodeExportState) (record: IRecord) (bytesWritten: int64) : NodeExportState =
             exportCtx.Error.Funcs.IncrementLine()
 
@@ -300,6 +286,8 @@ let exportNodesUnified
                 else
                     // Distribute bytes evenly among labels
                     let bytesPerLabel = bytesWritten / int64 labels.Length
+                    // List.fold threads the tracker through each label update
+                    // This is the functional equivalent of a foreach loop with mutable state
                     labels
                     |> List.fold
                         (fun tracker label ->
@@ -311,19 +299,17 @@ let exportNodesUnified
             { LineState = newLineState
               LabelTracker = newLabelTracker }
 
-        // Create batch context with provided parameters
         let batchCtx =
             BatchContext.createFull processor session fileStream (exportCtx.Config.JsonBufferSizeKb * 1024)
 
         let versionOpt =
             match processor.QueryBuilder with
-            | Some _ -> Some processor.Version // Get version from processor if using dynamic queries
-            | None -> None // Use legacy SKIP/LIMIT
+            | Some _ -> Some processor.Version
+            | None -> None
 
         match! processBatchedQuery batchCtx exportCtx exportState initialState nodeHandler versionOpt with
         | Error e -> return Error e
         | Ok(finalStats, finalState) ->
-            // Dispose batch context
             batchCtx.Buffer.Clear()
             
             // Log ID mapping statistics
@@ -355,7 +341,6 @@ let exportRelationships
             exportCtx.Error.Funcs.IncrementLine()
             state |> LineTracking.incrementLine
 
-        // Create batch context with provided parameters
         let batchCtx =
             BatchContext.createFull processor session fileStream (exportCtx.Config.JsonBufferSizeKb * 1024)
 
@@ -367,12 +352,10 @@ let exportRelationships
         match! processBatchedQuery batchCtx exportCtx exportState initialState relationshipHandler versionOpt with
         | Error e -> return Error e
         | Ok(finalStats, finalState) ->
-            // Dispose batch context
             batchCtx.Buffer.Clear()
             return Ok(finalStats, finalState)
     }
 
-/// Export error and warning records from the error tracker
 let exportErrors
     (fileStream: FileStream)
     (errorFuncs: ErrorTrackingFunctions)
@@ -381,6 +364,7 @@ let exportErrors
     : Async<int64 * LineTrackingState> =
     async {
         let errors = errorFuncs.Queries.GetErrors()
+        // Mutable state within async block is safe - async ensures sequential execution
         let mutable count = 0L
         let mutable currentLineState = lineState
 
@@ -393,6 +377,8 @@ let exportErrors
                 |> LineTracking.recordTypeStart error.Type
                 |> LineTracking.incrementLine
 
+            // Manual JSON serialization provides fine control over field order and null handling
+            // MemoryStream collects the JSON bytes before writing to file
             use memoryStream = new MemoryStream()
 
             use writer =
@@ -436,7 +422,6 @@ let exportErrors
         return (count, currentLineState)
     }
 
-/// Validates and moves temporary export file to final destination with metadata-based naming
 let finalizeExport _ (config: ExportConfig) (metadata: FullMetadata) (tempFile: string) (stats: CompletedExportStats) =
     async {
         try

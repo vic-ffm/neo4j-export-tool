@@ -28,8 +28,6 @@ open System.Text.Json.Serialization
 open Neo4j.Driver
 
 /// Core domain types for Neo4j export operations
-
-// Serialization level types - no strings!
 [<Struct>]
 type PathSerializationLevel =
     | Full
@@ -42,6 +40,8 @@ type NestedSerializationLevel =
     | Shallow
     | Reference
 
+// Single-case discriminated union with private constructor ensures depth values
+// can only be created and modified through the module's functions, preventing invalid states
 type SerializationDepth = private SerializationDepth of int
 
 module SerializationDepth =
@@ -61,6 +61,8 @@ type SerializationError =
 /// WARNING: This type uses decimal for all numbers, which loses original numeric type information.
 /// DO NOT use for actual Neo4j data export - use Utf8JsonWriter directly for type-safe serialization.
 /// This is intentionally designed for metadata where JSON fidelity matters more than .NET type fidelity.
+/// The decimal type can represent all JSON numbers without precision loss, but loses the distinction
+/// between int/long/float that Neo4j maintains - critical for data export but acceptable for metadata.
 type JsonValue =
     | JString of string
     | JNumber of decimal // All numeric types converted to decimal for JSON compatibility
@@ -92,7 +94,6 @@ type CompletedExportStats =
 
 /// Helper functions for export statistics
 module ExportStats =
-    /// Convert in-progress export to completed stats
     let complete (progress: ExportProgress) (endTime: DateTime) : CompletedExportStats =
         { RecordsProcessed = progress.RecordsProcessed
           RecordsSkipped = progress.RecordsSkipped
@@ -171,63 +172,13 @@ type AppError =
     | AggregateError of NonEmptyList<AppError>
 
 /// Mutable context for managing application lifecycle and cleanup
+/// NOTE: This type intentionally does NOT implement IDisposable.
+/// All cleanup is handled explicitly through Cleanup.performCleanup
+/// to avoid duplicate cleanup operations.
 type ApplicationContext =
     { CancellationTokenSource: System.Threading.CancellationTokenSource
       TempFiles: System.Collections.Concurrent.ConcurrentBag<string>
       ActiveProcesses: System.Collections.Concurrent.ConcurrentBag<System.Diagnostics.Process> }
-
-    interface IDisposable with
-        member this.Dispose() =
-            // Step 1: Dispose cancellation token source first
-            try
-                this.CancellationTokenSource.Dispose()
-            with ex ->
-                eprintfn "[WARN] Failed to dispose CancellationTokenSource: %s: %s" (ex.GetType().Name) ex.Message
-
-            // Step 2: Clean up temp files
-            for tempFile in this.TempFiles do
-                try
-                    if System.IO.File.Exists(tempFile) then
-                        System.IO.File.Delete(tempFile)
-                with ex ->
-                    eprintfn
-                        "[WARN] Failed to delete temporary file '%s': %s: %s"
-                        tempFile
-                        (ex.GetType().Name)
-                        ex.Message
-
-            // Step 3: Clean up processes with safe property access
-            for proc in this.ActiveProcesses do
-                // First, try to get process info for logging
-                let (canAccessProperties, processId) =
-                    try
-                        let pid = proc.Id
-                        (true, pid)
-                    with
-                    | :? System.InvalidOperationException ->
-                        // Process was already disposed
-                        (false, 0)
-                    | _ -> (false, 0)
-
-                if canAccessProperties then
-                    // We can safely access properties
-                    try
-                        if not proc.HasExited then
-                            proc.Kill()
-
-                        proc.Dispose()
-                    with ex ->
-                        eprintfn
-                            "[WARN] Failed to terminate/dispose process (PID %d): %s: %s"
-                            processId
-                            (ex.GetType().Name)
-                            ex.Message
-                else
-                    // Process already disposed, try to dispose anyway
-                    try
-                        proc.Dispose()
-                    with _ ->
-                        () // Silently ignore - process was already disposed
 
 type ExportScriptMetadata =
     { [<JsonPropertyName("name")>]
@@ -398,14 +349,18 @@ type LineTrackingState =
 
 /// Helper module for functional line tracking
 module LineTracking =
+    // Start at line 2 because line 1 contains metadata
     let create () =
         { CurrentLine = 2L
           RecordTypeStartLines = Map.empty }
 
+    // Returns new state with incremented line - original state is unchanged
     let incrementLine state =
         { state with
             CurrentLine = state.CurrentLine + 1L }
 
+    // Records the first occurrence of each record type for debugging/stats
+    // Subsequent occurrences of the same type are ignored
     let recordTypeStart (recordType: string) (state: LineTrackingState) =
         if state.RecordTypeStartLines.ContainsKey(recordType) then
             state
@@ -421,6 +376,8 @@ type ErrorTrackingState =
       CurrentLine: int64 }
 
 /// Messages for error tracking agent
+/// Uses F# MailboxProcessor (agent) pattern for thread-safe state management
+/// Each message includes an AsyncReplyChannel for synchronous responses
 type ErrorTrackingMessage =
     | AddError of
         message: string *
@@ -436,6 +393,7 @@ type ErrorTrackingMessage =
     | GetState of AsyncReplyChannel<ErrorTrackingState>
 
 /// Messages for resource monitoring agent
+/// Used with MailboxProcessor to coordinate background monitoring without shared mutable state
 type MonitoringMessage =
     | CheckResources of AsyncReplyChannel<Result<unit, string>>
     | Stop
@@ -476,7 +434,7 @@ type FullMetadata =
       [<JsonPropertyName("pagination_performance")>]
       PaginationPerformance: PaginationPerformance option }
 
-// Add version type for Neo4j compatibility
+// Struct attribute makes this a value type for better performance when used frequently
 [<Struct>]
 type Neo4jVersion =
     | V4x // Neo4j 4.4.x - uses id() function

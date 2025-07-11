@@ -26,6 +26,6 @@ open System.Collections.Generic
 
 /// Core temp file operations extracted for early compilation
 module TempFileOperations =
-    /// Register a temporary file for cleanup
     let register (context: ApplicationContext) (path: string) =
-        lock context.TempFiles (fun () -> context.TempFiles.Add(path) |> ignore)
+        // HashSet.Add returns bool indicating if item was added - we don't need this info
+        context.TempFiles.Add(path) |> ignore

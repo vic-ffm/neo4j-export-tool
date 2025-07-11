@@ -40,13 +40,15 @@ type ProgressContext =
 
 /// Groups all export-related contexts
 /// This is the top-level context for export operations
+/// Aggregates smaller contexts to reduce function parameters while maintaining modularity
+/// Each sub-context can be passed independently when only specific functionality is needed
 type ExportContext =
     { Error: ErrorContext
       Progress: ProgressContext
       Config: ExportConfig
       AppContext: ApplicationContext
-      Workflow: WorkflowOperations // NEW: Workflow control operations
-      Reporting: ProgressOperations option } // NEW: Progress reporting (None for non-batch)
+      Workflow: WorkflowOperations
+      Reporting: ProgressOperations option }
 
 /// Context for monitoring operations
 /// Groups monitoring-related configuration
@@ -58,12 +60,13 @@ type MonitoringContext =
 /// Context for workflow orchestration
 /// Groups all workflow-level dependencies
 /// Generic type parameter allows use before SafeSession is defined
+/// This pattern avoids circular dependencies between modules by deferring the concrete type
 type WorkflowContext<'TSession> =
     { App: ApplicationContext
       Export: ExportContext
       Session: 'TSession
       Metadata: FullMetadata
-      Neo4jVersion: Neo4jVersion } // ADD THIS LINE
+      Neo4jVersion: Neo4jVersion }
 
 /// Result of export execution
 /// Contains all data needed for finalization
@@ -73,11 +76,10 @@ type ExportResult<'TTracker> =
       LabelStats: 'TTracker
       EnhancedMetadata: FullMetadata
       FinalLineState: LineTrackingState
-      PaginationPerformance: PaginationPerformance option }  // Add this field
+      PaginationPerformance: PaginationPerformance option }
 
 /// Factory functions for ErrorContext
 module ErrorContext =
-    /// Create an error context from components
     let create exportId errorFuncs =
         { ExportId = exportId
           Funcs = errorFuncs }

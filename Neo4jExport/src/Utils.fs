@@ -30,6 +30,8 @@ open System.Threading.Tasks
 
 module Utils =
     let getScriptChecksum (cancellationToken: System.Threading.CancellationToken) : Task<string> =
+        // 'task' computation expression provides async/await semantics similar to C#
+        // Automatically handles Task<T> creation and exception propagation
         task {
             try
                 let assembly =
@@ -80,6 +82,8 @@ module Utils =
         let units =
             [| "B"; "KB"; "MB"; "GB"; "TB"; "PB" |]
 
+        // Tail-recursive function finds the appropriate unit by dividing by 1024
+        // F# compiler optimizes tail recursion into a loop, preventing stack overflow
         let rec findUnit (size: decimal) unitIndex =
             if size >= 1024.0m && unitIndex < units.Length - 1 then
                 findUnit (size / 1024.0m) (unitIndex + 1)
@@ -93,6 +97,8 @@ module Utils =
             findUnit (decimal bytes) 0
 
     let ensureDirectoryExists (path: string) =
+        // Comprehensive exception handling returns specific AppError variants
+        // This allows callers to handle different failure modes appropriately
         try
             if not (String.IsNullOrWhiteSpace(path)) then
                 Directory.CreateDirectory(path) |> ignore

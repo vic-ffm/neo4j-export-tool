@@ -27,6 +27,8 @@ open System.IO
 open System.Globalization
 open Neo4j.Driver
 
+// Computation expression builder combines async and Result workflows
+// This enables writing async code that can fail without nested match expressions
 type AsyncResultBuilder() =
     member _.Return(x) = async { return Ok x }
     member _.ReturnFrom(x) = x
@@ -35,7 +37,7 @@ type AsyncResultBuilder() =
         async {
             match! x with
             | Ok v -> return! f v
-            | Error e -> return Error e
+            | Error e -> return Error e  // Short-circuit on first error
         }
 
     member _.Zero() = async { return Ok() }
@@ -78,6 +80,8 @@ module Preflight =
 
     let private getPlatformSpecificMemory () =
         try
+            // Platform-specific memory detection as fallback when GC info unavailable
+            // Linux has reliable /proc/meminfo, other platforms use conservative defaults
             if
                 System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
                     System.Runtime.InteropServices.OSPlatform.Linux
@@ -355,6 +359,8 @@ module Preflight =
         (breaker: Neo4j.CircuitBreaker)
         (config: ExportConfig)
         =
+        // Computation expression syntax: 'do!' waits for async operations that return Result
+        // If any check returns Error, the entire computation stops and returns that Error
         asyncResult {
             Log.info "Running preflight checks..."
 
