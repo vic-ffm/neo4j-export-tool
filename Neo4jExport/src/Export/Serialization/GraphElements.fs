@@ -125,17 +125,21 @@ let serializeRelationship
 
 /// Internal high-performance node serialization that works directly with primitive data
 /// Used in the hot path to avoid object allocations
-let internal writeNodeDirect 
-    (writer: Utf8JsonWriter) 
-    (elementId: string) 
-    (stableId: string) 
-    (labels: IReadOnlyList<string>) 
-    (properties: IReadOnlyDictionary<string, obj>) 
-    (ctx: WriterContext) =
+let internal writeNodeDirect
+    (writer: Utf8JsonWriter)
+    (elementId: string)
+    (stableId: string)
+    (labels: IReadOnlyList<string>)
+    (properties: IReadOnlyDictionary<string, obj>)
+    (ctx: WriterContext)
+    =
     writer.WriteStartObject()
     writer.WriteString("type", "node")
     writer.WriteString("element_id", elementId)
-    writer.WriteString("NET_node_content_hash", stableId)
+
+    if ctx.Config.EnableHashedIds then
+        writer.WriteString("NET_node_content_hash", stableId)
+
     writer.WriteString("export_id", ctx.ExportId.ToString())
     writer.WriteStartArray("labels")
 
@@ -166,11 +170,15 @@ let internal writeRelationshipDirect
     (relType: string)
     (properties: IReadOnlyDictionary<string, obj>)
     (ids: EntityIdsWithStable)
-    (ctx: WriterContext) =
+    (ctx: WriterContext)
+    =
     writer.WriteStartObject()
     writer.WriteString("type", "relationship")
     writer.WriteString("element_id", ids.ElementId)
-    writer.WriteString("NET_rel_identity_hash", ids.StableId)
+
+    if ctx.Config.EnableHashedIds then
+        writer.WriteString("NET_rel_identity_hash", ids.StableId)
+
     writer.WriteString("export_id", ctx.ExportId.ToString())
 
     let safeType =
@@ -183,8 +191,11 @@ let internal writeRelationshipDirect
     writer.WriteString("label", safeType)
     writer.WriteString("start_element_id", ids.StartElementId)
     writer.WriteString("end_element_id", ids.EndElementId)
-    writer.WriteString("start_node_content_hash", ids.StartStableId)
-    writer.WriteString("end_node_content_hash", ids.EndStableId)
+
+    if ctx.Config.EnableHashedIds then
+        writer.WriteString("start_node_content_hash", ids.StartStableId)
+        writer.WriteString("end_node_content_hash", ids.EndStableId)
+
     writer.WriteStartObject("properties")
 
     serializeProperties writer ctx SerializationDepth.zero properties

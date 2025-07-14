@@ -137,7 +137,10 @@ type ExportConfig =
       // Label truncation limits
       MaxLabelsPerNode: int
       MaxLabelsInReferenceMode: int
-      MaxLabelsInPathCompact: int }
+      MaxLabelsInPathCompact: int
+
+      // Content-based hashing
+      EnableHashedIds: bool }
 
 /// All possible application errors
 ///
@@ -254,14 +257,12 @@ type FileLevelStatistics =
 
 /// Batch timing sample for trend analysis
 [<Struct>]
-type BatchTimingSample =
-    { BatchNumber: int
-      TimeMs: float }
+type BatchTimingSample = { BatchNumber: int; TimeMs: float }
 
 /// Pagination performance metrics
 type PaginationPerformance =
     { [<JsonPropertyName("strategy")>]
-      Strategy: string  // "keyset" or "skip_limit"
+      Strategy: string // "keyset" or "skip_limit"
       [<JsonPropertyName("total_batches")>]
       TotalBatches: int
       [<JsonPropertyName("average_batch_time_ms")>]
@@ -271,9 +272,9 @@ type PaginationPerformance =
       [<JsonPropertyName("last_batch_time_ms")>]
       LastBatchTimeMs: float
       [<JsonPropertyName("performance_trend")>]
-      PerformanceTrend: string  // "constant", "linear", "exponential"
+      PerformanceTrend: string // "constant", "linear", "exponential"
       [<JsonPropertyName("sample_timings")>]
-      SampleTimings: BatchTimingSample list }  // Samples every 10 batches
+      SampleTimings: BatchTimingSample list } // Samples every 10 batches
 
 type ExportManifestDetails =
     { [<JsonPropertyName("total_export_duration_seconds")>]

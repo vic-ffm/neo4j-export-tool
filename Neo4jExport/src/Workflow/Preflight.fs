@@ -37,7 +37,7 @@ type AsyncResultBuilder() =
         async {
             match! x with
             | Ok v -> return! f v
-            | Error e -> return Error e  // Short-circuit on first error
+            | Error e -> return Error e // Short-circuit on first error
         }
 
     member _.Zero() = async { return Ok() }

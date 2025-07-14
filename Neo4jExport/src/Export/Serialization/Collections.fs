@@ -33,6 +33,11 @@ open ErrorTracking
 let mutable serializeValueFunc: (Utf8JsonWriter -> WriterContext -> SerializationDepth -> obj -> unit) option =
     None
 
+let private getSerializeValueFunc () =
+    match serializeValueFunc with
+    | Some f -> f
+    | None -> failwith "SerializationEngine module must be initialized before using collection serialization functions"
+
 let serializeList (writer: Utf8JsonWriter) (ctx: WriterContext) (depth: SerializationDepth) (list: Collections.IList) =
     writer.WriteStartArray()
 
@@ -42,8 +47,11 @@ let serializeList (writer: Utf8JsonWriter) (ctx: WriterContext) (depth: Serializ
         |> Seq.truncate ctx.Config.MaxCollectionItems
         |> Seq.toList
 
+    let serializeValue =
+        getSerializeValueFunc ()
+
     items
-    |> List.iter (fun item -> serializeValueFunc.Value writer ctx (SerializationDepth.increment depth) item)
+    |> List.iter (fun item -> serializeValue writer ctx (SerializationDepth.increment depth) item)
 
     if list.Count > ctx.Config.MaxCollectionItems then
         writer.WriteStartObject()
@@ -69,6 +77,9 @@ let serializeMap
         |> Seq.truncate ctx.Config.MaxCollectionItems
         |> Seq.toList
 
+    let serializeValue =
+        getSerializeValueFunc ()
+
     entries
     |> List.iter (fun key ->
         let keyStr =
@@ -81,7 +92,7 @@ let serializeMap
                 "_key_error"
 
         writer.WritePropertyName keyStr
-        serializeValueFunc.Value writer ctx (SerializationDepth.increment depth) dict.[key])
+        serializeValue writer ctx (SerializationDepth.increment depth) dict.[key])
 
     if dict.Count > ctx.Config.MaxCollectionItems then
         writer.WriteString("_truncated", "map_too_large")
@@ -96,6 +107,9 @@ let serializeProperties
     (depth: SerializationDepth)
     (properties: Collections.Generic.IReadOnlyDictionary<string, obj>)
     =
+    let serializeValue =
+        getSerializeValueFunc ()
+
     properties
     |> Seq.truncate ctx.Config.MaxCollectionItems
     |> Seq.fold
@@ -104,7 +118,7 @@ let serializeProperties
                 ensureUniqueKey kvp.Key keyTracker
 
             writer.WritePropertyName(safePropName)
-            serializeValueFunc.Value writer ctx depth kvp.Value
+            serializeValue writer ctx depth kvp.Value
             keyTracker)
         (createKeyTracker ())
     |> ignore

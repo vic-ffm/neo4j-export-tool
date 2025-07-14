@@ -40,11 +40,11 @@ type EntityIds =
 [<Struct>]
 type EntityIdsWithStable =
     { ElementId: string
-      StableId: string  // This will be the identity hash
+      StableId: string // This will be the identity hash
       StartElementId: string
-      StartStableId: string  // This will be the start node content hash
+      StartStableId: string // This will be the start node content hash
       EndElementId: string
-      EndStableId: string }  // This will be the end node content hash
+      EndStableId: string } // This will be the end node content hash
 
 [<Struct>]
 type SerializationState =
@@ -145,63 +145,82 @@ type BatchPerformanceTracker() =
     let mutable totalTimeMs = 0.0
     let mutable firstBatchTimeMs = 0.0
     let mutable lastBatchTimeMs = 0.0
-    let samples = ResizeArray<BatchTimingSample>(100) // Pre-size for efficiency
-    
+
+    let samples =
+        ResizeArray<BatchTimingSample>(100) // Pre-size for efficiency
+
     member _.RecordBatch(durationMs: float) =
         batchCount <- batchCount + 1
         totalTimeMs <- totalTimeMs + durationMs
         lastBatchTimeMs <- durationMs
-        
+
         if batchCount = 1 then
             firstBatchTimeMs <- durationMs
-            
+
         // Sample every 10 batches for trend analysis
         if batchCount % 10 = 0 then
-            samples.Add({ BatchNumber = batchCount; TimeMs = durationMs })
-    
+            samples.Add(
+                { BatchNumber = batchCount
+                  TimeMs = durationMs }
+            )
+
     member _.GetMetrics(strategy: PaginationStrategy) : PaginationPerformance =
-        let strategyName = 
+        let strategyName =
             match strategy with
             | Keyset _ -> "keyset"
             | SkipLimit _ -> "skip_limit"
-            
-        let avgTime = if batchCount > 0 then totalTimeMs / float batchCount else 0.0
-        
-        let trend = 
-            if samples.Count < 3 then "insufficient_data"
+
+        let avgTime =
+            if batchCount > 0 then
+                totalTimeMs / float batchCount
+            else
+                0.0
+
+        let trend =
+            if samples.Count < 3 then
+                "insufficient_data"
             elif samples.Count >= 3 then
                 // Simple trend detection: compare first, middle, and last samples
                 let first = samples.[0].TimeMs
-                let middle = samples.[samples.Count / 2].TimeMs
-                let last = samples.[samples.Count - 1].TimeMs
-                
+
+                let middle =
+                    samples.[samples.Count / 2].TimeMs
+
+                let last =
+                    samples.[samples.Count - 1].TimeMs
+
                 let firstToMiddleRatio = middle / first
                 let middleToLastRatio = last / middle
-                
-                if abs(firstToMiddleRatio - 1.0) < 0.2 && abs(middleToLastRatio - 1.0) < 0.2 then
-                    "constant"  // O(log n) - keyset
-                elif firstToMiddleRatio > 1.3 && middleToLastRatio > 1.3 then
-                    "exponential"  // O(n²) - skip/limit
+
+                if
+                    abs (firstToMiddleRatio - 1.0) < 0.2
+                    && abs (middleToLastRatio - 1.0) < 0.2
+                then
+                    "constant" // O(log n) - keyset
+                elif
+                    firstToMiddleRatio > 1.3
+                    && middleToLastRatio > 1.3
+                then
+                    "exponential" // O(n²) - skip/limit
                 else
                     "linear"
-            else "unknown"
-        
-        {
-            Strategy = strategyName
-            TotalBatches = batchCount
-            AverageBatchTimeMs = avgTime
-            FirstBatchTimeMs = firstBatchTimeMs
-            LastBatchTimeMs = lastBatchTimeMs
-            PerformanceTrend = trend
-            SampleTimings = samples |> Seq.toList
-        }
+            else
+                "unknown"
+
+        { Strategy = strategyName
+          TotalBatches = batchCount
+          AverageBatchTimeMs = avgTime
+          FirstBatchTimeMs = firstBatchTimeMs
+          LastBatchTimeMs = lastBatchTimeMs
+          PerformanceTrend = trend
+          SampleTimings = samples |> Seq.toList }
 
 type QueryBuilder =
     Neo4jVersion -> PaginationStrategy -> int -> string * System.Collections.Generic.IDictionary<string, obj>
 
 type ExportState =
     { Version: Neo4jVersion
-      NodeIdMapping: NodeIdMapping 
+      NodeIdMapping: NodeIdMapping
       NodePerfTracker: BatchPerformanceTracker
       RelPerfTracker: BatchPerformanceTracker }
 

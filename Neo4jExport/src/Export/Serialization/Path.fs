@@ -39,25 +39,31 @@ let private generatePathSequence nodeCount relCount =
     // Validate Neo4j path invariant
     if relCount <> nodeCount - 1 && nodeCount > 0 then
         // Log warning but continue - defensive against malformed data
-        Log.warn (sprintf "Invalid path structure: %d nodes and %d relationships (expected %d relationships)" 
-                    nodeCount relCount (nodeCount - 1))
-    
+        Log.warn (
+            sprintf
+                "Invalid path structure: %d nodes and %d relationships (expected %d relationships)"
+                nodeCount
+                relCount
+                (nodeCount - 1)
+        )
+
     // Simple approach: generate indices for the alternating pattern
     // Total elements = nodes + relationships
     let totalElements = nodeCount + relCount
-    
+
     // Handle edge cases
     if totalElements = 0 then
         []
     else
-        [0 .. totalElements - 1]
+        [ 0 .. totalElements - 1 ]
         |> List.map (fun i ->
             if i % 2 = 0 then
                 // Even positions are nodes: 0, 2, 4, ...
                 {| Type = "node"; Index = i / 2 |}
             else
                 // Odd positions are relationships: 1, 3, 5, ...
-                {| Type = "relationship"; Index = i / 2 |})
+                {| Type = "relationship"
+                   Index = i / 2 |})
         |> List.filter (fun item ->
             // Defensive: ensure we don't exceed actual counts
             match item.Type with

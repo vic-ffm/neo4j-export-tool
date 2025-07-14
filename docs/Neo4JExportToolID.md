@@ -7,6 +7,8 @@ Version 0.14.0 of the Neo4j Export Tool introduced the following deterministic i
 - Tracking of data lineage and history in downstream analytics systems
 - Content-based addressing for deduplication and data quality
 
+**Note**: Hash ID generation can be disabled by setting `N4JET_ENABLE_HASHED_IDS=false` for improved performance when these features are not needed.
+
 ## Overview of ID Types
 
 The tool generates two distinct types of hashes with different purposes:

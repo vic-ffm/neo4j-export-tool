@@ -200,6 +200,26 @@ Control how the export process behaves:
   N4JET_QUERY_TIMEOUT_SECONDS=600
   ```
 
+### `N4JET_ENABLE_HASHED_IDS`
+- **Description**: Enable generation of content-based hash IDs for nodes and relationships
+- **Default**: `true`
+- **Values**: `true`, `false`
+- **Impact**:
+  - `true` = Generates `NET_node_content_hash` and `NET_rel_identity_hash` fields
+  - `false` = Omits hash fields, improving performance by skipping hash computation
+- **Use cases**:
+  ```bash
+  # Disable for faster exports when hash IDs aren't needed
+  N4JET_ENABLE_HASHED_IDS=false
+  
+  # Enable for change tracking between exports (default)
+  N4JET_ENABLE_HASHED_IDS=true
+  ```
+- **Notes**: 
+  - Hash IDs enable tracking changes between exports
+  - Disabling improves performance for one-time exports
+  - See [Neo4JExportToolID.md](Neo4JExportToolID.md) for hash ID specification
+
 ## Error Handling & Resilience
 
 Configure retry behaviour and error handling:
@@ -423,6 +443,7 @@ For a complete list of all environment variables with their defaults, see the [.
 | **Performance** | N4JET_BATCH_SIZE | 10000 | Integer |
 | | N4JET_JSON_BUFFER_SIZE_KB | 16 | Integer |
 | | N4JET_SKIP_SCHEMA_COLLECTION | false | Boolean |
+| **Export** | N4JET_ENABLE_HASHED_IDS | true | Boolean |
 | **Resources** | N4JET_MAX_MEMORY_MB | 1024 | Integer |
 | | N4JET_MIN_DISK_GB | 10 | Integer |
 | **Resilience** | N4JET_MAX_RETRIES | 5 | Integer |

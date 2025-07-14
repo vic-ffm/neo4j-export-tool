@@ -11,6 +11,12 @@ PROCESSED=0
 SKIPPED=0
 ADDED=0
 
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Get the parent directory (project root)
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+SOLUTION_FILE="$PROJECT_ROOT/Neo4jExport.sln"
+
 # Create the F# comment header from LICENSE file
 create_header() {
     cat << 'EOF'
@@ -82,12 +88,38 @@ process_file() {
 
 echo "Adding MIT license headers to F# source files..."
 echo "============================================="
-echo ""
+echo "Solution: $SOLUTION_FILE"
 
-# Find all F# source files and process them
-while IFS= read -r -d '' file; do
-    process_file "$file"
-done < <(find ../Neo4jExport/src -name "*.fs" -type f -print0 | sort -z)
+# Use process substitution to avoid subshell issues with counters
+while IFS= read -r project_relative_path; do
+    # Convert Windows paths to Unix paths
+    project_relative_path=$(echo "$project_relative_path" | tr '\\' '/')
+    
+    # Convert to full path
+    project_full_path="$PROJECT_ROOT/$project_relative_path"
+    
+    if [ -f "$project_full_path" ]; then
+        project_name=$(basename "$project_full_path" .fsproj)
+        echo ""
+        echo "Processing project: $project_name"
+        echo "----------------------------------------"
+        
+        # Extract all <Compile Include="..."> entries from the project file
+        while IFS= read -r relative_path; do
+            # Convert relative path to full path
+            project_dir=$(dirname "$project_full_path")
+            full_path="$project_dir/$relative_path"
+            
+            if [ -f "$full_path" ]; then
+                process_file "$full_path"
+            else
+                echo -e "${RED}[ERROR]${NC} File not found: $full_path"
+            fi
+        done < <(grep '<Compile Include="' "$project_full_path" | sed 's/.*Include="\([^"]*\)".*/\1/')
+    else
+        echo -e "${RED}[ERROR]${NC} Project file not found: $project_full_path"
+    fi
+done < <(grep -E 'Project.*\.fsproj"' "$SOLUTION_FILE" | sed -E 's/.*"([^"]+\.fsproj)".*/\1/')
 
 # Summary
 echo ""

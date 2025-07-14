@@ -127,7 +127,7 @@ module JsonHelpers =
         match value with
         | JNumber n ->
             try
-                Ok(int64 n)
+                Ok(int64 (Math.Round(float n)))
             with _ ->
                 Error "Cannot convert number to int64"
         | _ -> Error "Value is not a number"

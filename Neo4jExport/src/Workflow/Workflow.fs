@@ -73,7 +73,7 @@ module WorkflowFactories =
 
 module Workflow =
     open Neo4jExport.ExportTypes
-    
+
     let handleError (error: AppError) =
         let message =
             ErrorAccumulation.appErrorToString error
@@ -93,7 +93,7 @@ module Workflow =
         | FileSystemError _ -> 3
         | SecurityError _ -> 6
         | TimeoutError _ -> 5
-        | PaginationError _ -> 7  // Same as QueryError - data access issue
+        | PaginationError _ -> 7 // Same as QueryError - data access issue
         | AggregateError _ -> 6
 
     /// Prepare export file with metadata placeholder
@@ -160,7 +160,7 @@ module Workflow =
         : Async<Result<ExportResult<LabelStatsTracker.Tracker>, AppError>> =
         async {
             Log.debug (sprintf "Creating export processors for Neo4j version: %A" workflowCtx.Neo4jVersion)
-            
+
             let nodeProcessor =
                 ExportCore.ExportProcessors.createNodeProcessor workflowCtx.Neo4jVersion
 
@@ -169,23 +169,37 @@ module Workflow =
 
             match workflowCtx.Neo4jVersion with
             | Unknown ->
-                Log.warn "Neo4j version could not be detected - using SKIP/LIMIT pagination (O(n²) performance degradation for large datasets)"
-                workflowCtx.Export.Error.Funcs.TrackWarning 
-                    "Unknown Neo4j version - degraded pagination performance" 
-                    None 
-                    (Some (dict ["impact", JString "performance"; "fallback", JString "SKIP/LIMIT"]))
-            | v ->
-                Log.info (sprintf "Neo4j %A detected - using optimized keyset pagination (O(log n) performance)" v)
-            
+                Log.warn
+                    "Neo4j version could not be detected - using SKIP/LIMIT pagination (O(n²) performance degradation for large datasets)"
+
+                workflowCtx.Export.Error.Funcs.TrackWarning
+                    "Unknown Neo4j version - degraded pagination performance"
+                    None
+                    (Some(
+                        dict
+                            [ "impact", JString "performance"
+                              "fallback", JString "SKIP/LIMIT" ]
+                    ))
+            | v -> Log.info (sprintf "Neo4j %A detected - using optimized keyset pagination (O(log n) performance)" v)
+
             // Create ExportState for stable ID tracking
-            let exportState = ExportState.Create(workflowCtx.Neo4jVersion)
-            
-            Log.debug (sprintf "ExportState initialized - Version: %A, NodeIdMapping capacity: %d" 
-                exportState.Version 
-                exportState.NodeIdMapping.Count)
+            let exportState =
+                ExportState.Create(workflowCtx.Neo4jVersion)
+
+            Log.debug (
+                sprintf
+                    "ExportState initialized - Version: %A, NodeIdMapping capacity: %d"
+                    exportState.Version
+                    exportState.NodeIdMapping.Count
+            )
 
             let! nodeResult =
-                ExportCore.exportNodesUnified workflowCtx.Session fileStream workflowCtx.Export exportState nodeProcessor
+                ExportCore.exportNodesUnified
+                    workflowCtx.Session
+                    fileStream
+                    workflowCtx.Export
+                    exportState
+                    nodeProcessor
 
             match nodeResult with
             | Error e -> return Error e
@@ -197,7 +211,12 @@ module Workflow =
                               LineState = lineStateAfterNodes } }
 
                 match!
-                    ExportCore.exportRelationships workflowCtx.Session fileStream updatedExportContext exportState relProcessor
+                    ExportCore.exportRelationships
+                        workflowCtx.Session
+                        fileStream
+                        updatedExportContext
+                        exportState
+                        relProcessor
                 with
                 | Error e -> return Error e
                 | Ok(finalStats, lineStateAfterRels) ->
@@ -229,17 +248,27 @@ module Workflow =
 
                     let exportDuration =
                         (DateTime.UtcNow - exportStartTime).TotalSeconds
-                    
-                    let nodePerfMetrics = 
-                        let nodeStrategy = if exportState.Version = Unknown then SkipLimit 0 else Keyset(None, exportState.Version)
+
+                    let nodePerfMetrics =
+                        let nodeStrategy =
+                            if exportState.Version = Unknown then
+                                SkipLimit 0
+                            else
+                                Keyset(None, exportState.Version)
+
                         exportState.NodePerfTracker.GetMetrics(nodeStrategy)
-                    
-                    let relPerfMetrics = 
-                        let relStrategy = if exportState.Version = Unknown then SkipLimit 0 else Keyset(None, exportState.Version)
+
+                    let relPerfMetrics =
+                        let relStrategy =
+                            if exportState.Version = Unknown then
+                                SkipLimit 0
+                            else
+                                Keyset(None, exportState.Version)
+
                         exportState.RelPerfTracker.GetMetrics(relStrategy)
-                    
+
                     // Prefer node metrics as primary indicator
-                    let combinedPerfMetrics = 
+                    let combinedPerfMetrics =
                         if nodePerfMetrics.TotalBatches > relPerfMetrics.TotalBatches then
                             Some nodePerfMetrics
                         else
@@ -250,7 +279,9 @@ module Workflow =
                         |> fun m -> Metadata.enhanceWithManifest m labelStats exportDuration
                         |> fun m -> Metadata.addErrorSummary m workflowCtx.Export.Error.Funcs
                         |> fun m -> Metadata.addFormatInfo m finalLineState
-                        |> fun m -> { m with PaginationPerformance = combinedPerfMetrics }
+                        |> fun m ->
+                            { m with
+                                PaginationPerformance = combinedPerfMetrics }
 
                     return
                         Ok
@@ -350,10 +381,10 @@ module Workflow =
             let! connectionResult =
                 driver.VerifyConnectivityAsync()
                 |> Async.AwaitTask
-                |> Async.Catch  // Wraps result in Choice type to handle exceptions without throwing
+                |> Async.Catch // Wraps result in Choice type to handle exceptions without throwing
 
             match connectionResult with
-            | Choice1Of2 _ ->  // Success case - no exception occurred
+            | Choice1Of2 _ -> // Success case - no exception occurred
                 Log.info "Successfully connected to Neo4j"
 
                 use session =
@@ -393,7 +424,7 @@ module Workflow =
                             | Error e -> return Error e
                             | Ok(metadata, version) ->
                                 Log.info (sprintf "Detected Neo4j version: %A" version)
-                                
+
                                 let finalFilename =
                                     Configuration.generateMetadataFilename config.OutputDirectory metadata
 
@@ -412,6 +443,6 @@ module Workflow =
                                 return! performExport workflowCtx
                 finally
                     errorFuncs.Dispose()
-            | Choice2Of2 ex ->  // Exception case - connectivity check failed
+            | Choice2Of2 ex -> // Exception case - connectivity check failed
                 return Error(ConnectionError("Failed to connect to Neo4j", Some ex))
         }

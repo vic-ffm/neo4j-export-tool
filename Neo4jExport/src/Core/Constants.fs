@@ -46,7 +46,10 @@ module Constants =
         let Uri = "N4JET_NEO4J_URI"
         let User = "N4JET_NEO4J_USER"
         let Password = "N4JET_NEO4J_PASSWORD"
-        let OutputDirectory = "N4JET_OUTPUT_DIRECTORY"
+
+        let OutputDirectory =
+            "N4JET_OUTPUT_DIRECTORY"
+
         let MinDiskGb = "N4JET_MIN_DISK_GB"
         let MaxMemoryMb = "N4JET_MAX_MEMORY_MB"
 
@@ -55,13 +58,18 @@ module Constants =
 
         let MaxRetries = "N4JET_MAX_RETRIES"
         let RetryDelayMs = "N4JET_RETRY_DELAY_MS"
-        let MaxRetryDelayMs = "N4JET_MAX_RETRY_DELAY_MS"
+
+        let MaxRetryDelayMs =
+            "N4JET_MAX_RETRY_DELAY_MS"
 
         let QueryTimeoutSeconds =
             "N4JET_QUERY_TIMEOUT_SECONDS"
 
         let EnableDebugLogging = "N4JET_DEBUG"
-        let ValidateJsonOutput = "N4JET_VALIDATE_JSON"
+
+        let ValidateJsonOutput =
+            "N4JET_VALIDATE_JSON"
+
         let AllowInsecure = "N4JET_ALLOW_INSECURE"
         let BatchSize = "N4JET_BATCH_SIZE"
 
@@ -74,13 +82,15 @@ module Constants =
         let MinMemoryReservation =
             "N4JET_NEO4J_EXPORT_MIN_MEMORY_RESERVATION"
 
-        let JsonBufferSizeKb = "N4JET_JSON_BUFFER_SIZE_KB"
+        let JsonBufferSizeKb =
+            "N4JET_JSON_BUFFER_SIZE_KB"
 
         // Path serialization safety thresholds
         // [<Literal>] attribute ensures these are compile-time constants, enabling
         // their use in pattern matching and other contexts requiring const values
         [<Literal>]
-        let MAX_PATH_LENGTH = "N4JET_MAX_PATH_LENGTH"
+        let MAX_PATH_LENGTH =
+            "N4JET_MAX_PATH_LENGTH"
 
         [<Literal>]
         let PATH_FULL_MODE_LIMIT =
@@ -96,7 +106,8 @@ module Constants =
 
         // Nested graph element safety thresholds
         [<Literal>]
-        let MAX_NESTED_DEPTH = "N4JET_MAX_NESTED_DEPTH"
+        let MAX_NESTED_DEPTH =
+            "N4JET_MAX_NESTED_DEPTH"
 
         [<Literal>]
         let NESTED_SHALLOW_MODE_DEPTH =
@@ -123,6 +134,10 @@ module Constants =
         [<Literal>]
         let MAX_COLLECTION_ITEMS =
             "N4JET_MAX_COLLECTION_ITEMS"
+
+        // Content-based hashing
+        let EnableHashedIds =
+            "N4JET_ENABLE_HASHED_IDS"
 
     /// Default values for all configurable settings
     module Defaults =
@@ -179,6 +194,9 @@ module Constants =
 
         // Collection limits
         let MaxCollectionItems = 10000
+
+        // Content-based hashing
+        let EnableHashedIds = true
 
     let getVersion () = App.Version
     let getVersionString () = App.VersionString

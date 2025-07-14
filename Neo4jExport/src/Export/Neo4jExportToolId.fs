@@ -1,17 +1,17 @@
 // MIT License
-// 
+//
 // Copyright (c) 2025-present State Government of Victoria
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -31,10 +31,6 @@ open System.Text.Json.Serialization
 
 /// High-performance stable ID generation for Neo4j entities
 module Neo4jExportToolId =
-
-    // Reusable SHA256 instance - thread-safe per .NET docs
-    // Creating once and reusing avoids repeated cryptographic initialization overhead
-    let private sha256 = SHA256.Create()
 
     // JSON options for canonical serialization - create once
     // Canonical form ensures identical objects always produce the same JSON string
@@ -67,7 +63,8 @@ module Neo4jExportToolId =
     [<CompiledName("ComputeSha256Hex")>]
     let private computeSha256Hex (input: string) =
         let bytes = Encoding.UTF8.GetBytes(input)
-        let hash = sha256.ComputeHash(bytes)
+        // Use static SHA256.HashData method - thread-safe and optimal for .NET 5+
+        let hash = SHA256.HashData(bytes)
 
         // Pre-allocate exact size for hex string
         let chars = Array.zeroCreate<char> 64
@@ -130,8 +127,10 @@ module Neo4jExportToolId =
     let generateNodeId (labels: string seq) (properties: IDictionary<string, obj>) =
         // Sort labels for deterministic output
         let sortedLabels =
-            if isNull labels then "" 
-            else labels |> Seq.sort |> String.concat "+"
+            if isNull labels then
+                ""
+            else
+                labels |> Seq.sort |> String.concat "+"
 
         let propsJson =
             canonicalizeProperties properties

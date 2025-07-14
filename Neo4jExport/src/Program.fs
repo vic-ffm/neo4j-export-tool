@@ -55,16 +55,16 @@ module Program =
                 |> function
                     | Ok() ->
                         Log.info "Export completed successfully"
-                        0  // Unix convention: 0 indicates success
+                        0 // Unix convention: 0 indicates success
                     | Error err -> Workflow.handleError err
             with
             | :? OperationCanceledException ->
                 Log.warn "Export cancelled by user"
-                130  // Unix convention: 128 + signal number (SIGINT = 2)
+                130 // Unix convention: 128 + signal number (SIGINT = 2)
             | ex ->
                 Log.fatal (sprintf "Unexpected error: %s" (ErrorAccumulation.exceptionToString ex))
                 Log.logException ex
-                1  // Generic error exit code
+                1 // Generic error exit code
 
     let private performFinalCleanup (context: ApplicationContext) =
         try

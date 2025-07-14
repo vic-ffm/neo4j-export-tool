@@ -61,12 +61,15 @@ let rec serializeValue (writer: Utf8JsonWriter) (ctx: WriterContext) (depth: Ser
         with ex ->
             handleSerializationError writer ex depth
 
-/// Initialize circular dependencies after serializeValue is defined
-do
+/// Explicitly initialize the serialization engine
+let initializeSerializationEngine () =
     SerializationCollections.serializeValueFunc <-
         Some(fun writer ctx depth value -> serializeValue writer ctx depth value)
 
     SerializationGraphElements.serializePathFunc <- Some(fun writer ctx path -> serializePath writer ctx path)
+
+/// Initialize circular dependencies after serializeValue is defined
+do initializeSerializationEngine ()
 
 let writeNode =
     SerializationGraphElements.writeNode

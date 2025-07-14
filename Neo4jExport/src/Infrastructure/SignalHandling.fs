@@ -41,8 +41,8 @@ module SignalHandling =
                 AppContext.cancel context
                 args.Cancel <- true)
 
-// PosixSignalRegistration was introduced in .NET 6
-// Earlier versions require reflection-based fallback
+        // PosixSignalRegistration was introduced in .NET 6
+        // Earlier versions require reflection-based fallback
 #if NET6_0_OR_GREATER
         let sigtermRegistration =
             PosixSignalRegistration.Create(

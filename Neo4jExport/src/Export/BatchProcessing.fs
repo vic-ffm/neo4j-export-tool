@@ -38,11 +38,12 @@ open Neo4jExport.Neo4jExportToolId
 open ErrorTracking
 
 let private isValidStableId (id: string) =
-    let isHexChar = function
+    let isHexChar =
+        function
         | c when c >= '0' && c <= '9' -> true
         | c when c >= 'a' && c <= 'f' -> true
         | _ -> false
-    
+
     id.Length = 64 && id |> Seq.forall isHexChar
 
 let reportProgress
@@ -91,56 +92,68 @@ let private incrementStats (stats: ExportProgress) =
         RecordsProcessed = stats.RecordsProcessed + 1L }
 
 /// Truncate and convert Neo4j temporal values to .NET types to avoid ValueTruncationException
-/// 
+///
 /// Neo4j stores temporal values with nanosecond precision (e.g., 2024-08-15T21:40:08.623060588Z)
 /// but .NET DateTime only supports 100-nanosecond ticks. When the Neo4j driver tries to
 /// convert a value with precision that would be lost (e.g., 88 nanoseconds), it throws
 /// a ValueTruncationException to prevent silent data loss.
-/// 
+///
 /// This function truncates Neo4j temporal values to .NET-compatible precision and converts
 /// them to the appropriate .NET temporal types. The serialization engine will then handle
 /// these typed values correctly, producing proper ISO format strings in the output.
 let private truncateAndConvertTemporal (value: obj) : obj =
     match value with
     // Already .NET types - pass through unchanged
-    | :? DateTime 
+    | :? DateTime
     | :? DateTimeOffset -> value
-    
+
     // Neo4j temporal types - convert with truncation
-    | :? Neo4j.Driver.LocalDate -> 
+    | :? Neo4j.Driver.LocalDate ->
         // LocalDate has no time component and doesn't need truncation
         // Return unchanged to preserve date-only semantics
         value
-    
-    | :? Neo4j.Driver.LocalTime as lt -> 
+
+    | :? Neo4j.Driver.LocalTime as lt ->
         // Keep as LocalTime but truncate nanoseconds to 100ns precision
-        let truncatedNanos = (lt.Nanosecond / 100) * 100
+        let truncatedNanos =
+            (lt.Nanosecond / 100) * 100
+
         box (LocalTime(lt.Hour, lt.Minute, lt.Second, truncatedNanos))
-    
-    | :? Neo4j.Driver.LocalDateTime as ldt -> 
+
+    | :? Neo4j.Driver.LocalDateTime as ldt ->
         // Keep as LocalDateTime but truncate nanoseconds to 100ns precision
-        let truncatedNanos = (ldt.Nanosecond / 100) * 100
+        let truncatedNanos =
+            (ldt.Nanosecond / 100) * 100
+
         box (LocalDateTime(ldt.Year, ldt.Month, ldt.Day, ldt.Hour, ldt.Minute, ldt.Second, truncatedNanos))
-    
+
     | :? Neo4j.Driver.OffsetTime as ot ->
         // Keep as OffsetTime but truncate nanoseconds to 100ns precision
-        let truncatedNanos = (ot.Nanosecond / 100) * 100
+        let truncatedNanos =
+            (ot.Nanosecond / 100) * 100
+
         box (OffsetTime(ot.Hour, ot.Minute, ot.Second, truncatedNanos, ot.OffsetSeconds))
-    
+
     | :? Neo4j.Driver.ZonedDateTime as zdt ->
         // Keep as ZonedDateTime but truncate nanoseconds to 100ns precision
         // This preserves timezone information (both offset and zone name)
-        let truncatedNanos = (zdt.Nanosecond / 100) * 100
+        let truncatedNanos =
+            (zdt.Nanosecond / 100) * 100
         // Use the UtcSeconds constructor to avoid deprecated constructor
         box (ZonedDateTime(zdt.UtcSeconds, truncatedNanos, zdt.Zone))
-    
+
     | :? Neo4j.Driver.Duration as d ->
         // Duration remains as-is - the serialization engine handles it
         value
-    
+
     | _ -> value
 
-let processNodeRecord (exportState: ExportState) (recordCtx: RecordContext<BatchErrorAccumulator>) (exportCtx: ExportContext) (record: IRecord) =
+let processNodeRecord
+    (exportState: ExportState)
+    (recordCtx: RecordContext<BatchErrorAccumulator>)
+    (exportCtx: ExportContext)
+    (record: IRecord)
+    =
     let ctx =
         SerializationContext.createWriterContext exportCtx.Config exportCtx.Error.Funcs exportCtx.Error.ExportId
 
@@ -148,12 +161,17 @@ let processNodeRecord (exportState: ExportState) (recordCtx: RecordContext<Batch
         new Utf8JsonWriter(recordCtx.Buffer, JsonConfig.createWriterOptions ())
 
     try
-        let elementId = record.["elementId"].As<string>()
-        let labels = record.["labels"].As<List<obj>>() |> Seq.cast<string> |> Seq.toList
-        
+        let elementId =
+            record.["elementId"].As<string>()
+
+        let labels =
+            record.["labels"].As<List<obj>>()
+            |> Seq.cast<string>
+            |> Seq.toList
+
         // Both Neo4j 4.x and 5.x+ now return raw nodes to minimize DB load
         // We handle temporal conversion here in the export tool rather than in the query
-        let properties = 
+        let properties =
             if record.Keys |> Seq.exists (fun k -> k = "node") then
                 // Extract properties from the raw node
                 let node = record.["node"].As<INode>()
@@ -162,29 +180,49 @@ let processNodeRecord (exportState: ExportState) (recordCtx: RecordContext<Batch
                 // This prevents ValueTruncationException when accessing high-precision temporal values
                 for kvp in node.Properties do
                     d.Add(kvp.Key, truncateAndConvertTemporal kvp.Value)
+
                 d :> IReadOnlyDictionary<string, obj>
             else
                 // Fallback for any future query formats that pre-process properties
-                let propsList = record.["properties"].As<List<obj>>()
+                let propsList =
+                    record.["properties"].As<List<obj>>()
+
                 let d = Dictionary<string, obj>()
+
                 for prop in propsList do
-                    let propMap = prop :?> IReadOnlyDictionary<string, obj>
+                    let propMap =
+                        prop :?> IReadOnlyDictionary<string, obj>
+
                     d.Add(propMap.["key"].As<string>(), propMap.["value"])
+
                 d :> IReadOnlyDictionary<string, obj>
-        
-        // The properties dictionary is now guaranteed to be safe
-        let propsDict = 
-            properties 
-            |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
-            |> dict
-        let stableId = Neo4jExportToolId.generateNodeId labels propsDict
-        
-        // Only validate in debug mode to avoid hot path overhead
-        if exportCtx.Config.EnableDebugLogging && not (isValidStableId stableId) then
-            Log.warn (sprintf "Invalid stable ID format for node %s: %s" elementId stableId)
-        
-        exportState.NodeIdMapping.TryAdd(elementId, stableId) |> ignore
-        
+
+        // Generate stable ID only if hash IDs are enabled
+        let stableId =
+            if exportCtx.Config.EnableHashedIds then
+                let propsDict =
+                    properties
+                    |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
+                    |> dict
+
+                let id =
+                    Neo4jExportToolId.generateNodeId labels propsDict
+
+                // Only validate in debug mode to avoid hot path overhead
+                if
+                    exportCtx.Config.EnableDebugLogging
+                    && not (isValidStableId id)
+                then
+                    Log.warn (sprintf "Invalid stable ID format for node %s: %s" elementId id)
+
+                exportState.NodeIdMapping.TryAdd(elementId, id)
+                |> ignore
+
+                id
+            else
+                // Return empty string when hashing is disabled
+                ""
+
         // Use direct serialization to avoid object allocation in hot path
         writeNodeDirect writer elementId stableId (labels :> IReadOnlyList<string>) properties ctx
     with ex ->
@@ -196,7 +234,10 @@ let processNodeRecord (exportState: ExportState) (recordCtx: RecordContext<Batch
         writer.WriteStartObject()
         writer.WriteString("type", "node")
         writer.WriteString("element_id", elementId)
-        writer.WriteString("NET_node_content_hash", "")
+
+        if exportCtx.Config.EnableHashedIds then
+            writer.WriteString("NET_node_content_hash", "")
+
         writer.WriteString("export_id", ctx.ExportId.ToString())
         writer.WriteStartArray "labels"
         writer.WriteEndArray()
@@ -227,74 +268,106 @@ let processRelationshipRecord
         new Utf8JsonWriter(recordCtx.Buffer, JsonConfig.createWriterOptions ())
 
     try
-        let elementId = record.["elementId"].As<string>()
+        let elementId =
+            record.["elementId"].As<string>()
+
         let relType = record.["type"].As<string>()
-        let startNodeId = record.["startNodeElementId"].As<string>()
-        let endNodeId = record.["endNodeElementId"].As<string>()
-        
+
+        let startNodeId =
+            record.["startNodeElementId"].As<string>()
+
+        let endNodeId =
+            record.["endNodeElementId"].As<string>()
+
         // Both Neo4j 4.x and 5.x+ now return raw relationships to minimize DB load
         // We handle temporal conversion here in the export tool rather than in the query
-        let properties = 
-            if record.Keys |> Seq.exists (fun k -> k = "relationship") then
+        let properties =
+            if
+                record.Keys
+                |> Seq.exists (fun k -> k = "relationship")
+            then
                 // Extract properties from the raw relationship
-                let rel = record.["relationship"].As<IRelationship>()
+                let rel =
+                    record.["relationship"].As<IRelationship>()
+
                 let d = Dictionary<string, obj>()
                 // CRITICAL: Truncate and convert temporal values to .NET types
                 // This prevents ValueTruncationException when accessing high-precision temporal values
                 for kvp in rel.Properties do
                     d.Add(kvp.Key, truncateAndConvertTemporal kvp.Value)
+
                 d :> IReadOnlyDictionary<string, obj>
             else
                 // Fallback for any future query formats that pre-process properties
-                let propsList = record.["properties"].As<List<obj>>()
+                let propsList =
+                    record.["properties"].As<List<obj>>()
+
                 let d = Dictionary<string, obj>()
+
                 for prop in propsList do
-                    let propMap = prop :?> IReadOnlyDictionary<string, obj>
+                    let propMap =
+                        prop :?> IReadOnlyDictionary<string, obj>
+
                     d.Add(propMap.["key"].As<string>(), propMap.["value"])
+
                 d :> IReadOnlyDictionary<string, obj>
-        
-        // Lookup stable IDs for nodes
-        let startStableId = 
-            match exportState.NodeIdMapping.TryGetValue(startNodeId) with
-            | true, id -> id
-            | false, _ -> 
-                // Fallback: use element ID if stable ID not found
-                ctx.ErrorFuncs.TrackWarning 
-                    (sprintf "Stable ID not found for start node %s" startNodeId) 
-                    (Some elementId) 
-                    None
-                startNodeId
-        
-        let endStableId = 
-            match exportState.NodeIdMapping.TryGetValue(endNodeId) with
-            | true, id -> id
-            | false, _ -> 
-                // Fallback: use element ID if stable ID not found
-                ctx.ErrorFuncs.TrackWarning 
-                    (sprintf "Stable ID not found for end node %s" endNodeId) 
-                    (Some elementId) 
-                    None
-                endNodeId
-        
-        // The properties dictionary is now guaranteed to be safe
-        let propsDict = 
-            properties 
-            |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
-            |> dict
-        // Generate identity hash using element IDs (stable within database)
-        let identityHash = Neo4jExportToolId.generateRelationshipIdentityHash relType startNodeId endNodeId propsDict
-        
-        // Only validate in debug mode to avoid hot path overhead
-        if exportCtx.Config.EnableDebugLogging && not (isValidStableId identityHash) then
-            Log.warn (sprintf "Invalid identity hash format for relationship %s: %s" elementId identityHash)
-        
+
+        // Generate stable IDs only if hash IDs are enabled
+        let (startStableId, endStableId, identityHash) =
+            if exportCtx.Config.EnableHashedIds then
+                // Lookup stable IDs for nodes
+                let startId =
+                    match exportState.NodeIdMapping.TryGetValue(startNodeId) with
+                    | true, id -> id
+                    | false, _ ->
+                        // Fallback: use element ID if stable ID not found
+                        ctx.ErrorFuncs.TrackWarning
+                            (sprintf "Stable ID not found for start node %s" startNodeId)
+                            (Some elementId)
+                            None
+
+                        startNodeId
+
+                let endId =
+                    match exportState.NodeIdMapping.TryGetValue(endNodeId) with
+                    | true, id -> id
+                    | false, _ ->
+                        // Fallback: use element ID if stable ID not found
+                        ctx.ErrorFuncs.TrackWarning
+                            (sprintf "Stable ID not found for end node %s" endNodeId)
+                            (Some elementId)
+                            None
+
+                        endNodeId
+
+                // The properties dictionary is now guaranteed to be safe
+                let propsDict =
+                    properties
+                    |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
+                    |> dict
+                // Generate identity hash using element IDs (stable within database)
+                let hash =
+                    Neo4jExportToolId.generateRelationshipIdentityHash relType startNodeId endNodeId propsDict
+
+                // Only validate in debug mode to avoid hot path overhead
+                if
+                    exportCtx.Config.EnableDebugLogging
+                    && not (isValidStableId hash)
+                then
+                    Log.warn (sprintf "Invalid identity hash format for relationship %s: %s" elementId hash)
+
+                (startId, endId, hash)
+            else
+                // Return empty strings when hashing is disabled
+                ("", "", "")
+
         let ids =
             { ElementId = elementId
-              StableId = identityHash  // The relationship identity hash
+              StableId = identityHash // The relationship identity hash
               StartElementId = startNodeId
-              StartStableId = startStableId  // Start node content hash
+              StartStableId = startStableId // Start node content hash
               EndElementId = endNodeId
-              EndStableId = endStableId }  // End node content hash
+              EndStableId = endStableId } // End node content hash
 
         // Use direct serialization to avoid object allocation in hot path
         writeRelationshipDirect writer relType properties ids ctx
@@ -305,13 +378,19 @@ let processRelationshipRecord
         writer.WriteStartObject()
         writer.WriteString("type", "relationship")
         writer.WriteString("element_id", "")
-        writer.WriteString("NET_rel_identity_hash", "")
+
+        if exportCtx.Config.EnableHashedIds then
+            writer.WriteString("NET_rel_identity_hash", "")
+
         writer.WriteString("export_id", ctx.ExportId.ToString())
         writer.WriteString("label", "_UNKNOWN")
         writer.WriteString("start_element_id", "")
         writer.WriteString("end_element_id", "")
-        writer.WriteString("start_node_content_hash", "")
-        writer.WriteString("end_node_content_hash", "")
+
+        if exportCtx.Config.EnableHashedIds then
+            writer.WriteString("start_node_content_hash", "")
+            writer.WriteString("end_node_content_hash", "")
+
         writer.WriteStartObject "properties"
         writer.WriteString("_export_error", "relationship_access_failed")
         writer.WriteString("_error_message", (ErrorAccumulation.exceptionToString ex))
@@ -359,9 +438,11 @@ module private KeysetPagination =
                     | "Nodes" -> "nodeId"
                     | "Relationships" -> "relId"
                     | _ -> failwithf "Unknown entity type: %s" entityType
+
                 let id = record.[fieldName].As<int64>()
                 Some(NumericId id)
-            | V5x | V6x ->
+            | V5x
+            | V6x ->
                 // Neo4j 5.x+ uses elementId for both nodes and relationships
                 let id = record.["elementId"].As<string>()
                 Some(ElementId id)
@@ -389,14 +470,14 @@ let processBatchedQuery<'state>
     : Async<Result<ExportProgress * 'state, AppError>> =
     async {
         // Determine which performance tracker to use based on entity type
-        let perfTracker = 
+        let perfTracker =
             match batchCtx.Processor.EntityName with
             | "Nodes" -> exportState.NodePerfTracker
             | "Relationships" -> exportState.RelPerfTracker
             | _ -> failwithf "Unknown entity type: %s" batchCtx.Processor.EntityName
-        
+
         let stopwatch = Stopwatch()
-        
+
         let progressInterval =
             TimeSpan.FromSeconds 30.0
 
@@ -424,21 +505,27 @@ let processBatchedQuery<'state>
         // Determine initial pagination strategy
         let initialStrategy =
             match version, batchCtx.Processor.QueryBuilder with
-            | Some v, Some _ -> 
-                Log.info (sprintf "Using keyset pagination for %s (Neo4j %A)" 
-                    (batchCtx.Processor.EntityName.ToLower()) v)
+            | Some v, Some _ ->
+                Log.info (
+                    sprintf "Using keyset pagination for %s (Neo4j %A)" (batchCtx.Processor.EntityName.ToLower()) v
+                )
+
                 Keyset(None, v) // Use keyset if version provided and processor supports it
-            | _ -> 
-                Log.warn (sprintf "Using SKIP/LIMIT pagination for %s (legacy mode)" 
-                    (batchCtx.Processor.EntityName.ToLower()))
-                
+            | _ ->
+                Log.warn (
+                    sprintf "Using SKIP/LIMIT pagination for %s (legacy mode)" (batchCtx.Processor.EntityName.ToLower())
+                )
+
                 // Track this as a performance warning
-                exportCtx.Error.Funcs.TrackWarning 
-                    "Fallback to SKIP/LIMIT pagination due to unknown version or missing query builder" 
-                    None 
-                    (Some (dict ["entity", JString batchCtx.Processor.EntityName; 
-                                 "impact", JString "O(n²) performance"]))
-                
+                exportCtx.Error.Funcs.TrackWarning
+                    "Fallback to SKIP/LIMIT pagination due to unknown version or missing query builder"
+                    None
+                    (Some(
+                        dict
+                            [ "entity", JString batchCtx.Processor.EntityName
+                              "impact", JString "O(n²) performance" ]
+                    ))
+
                 SkipLimit 0 // Otherwise use legacy SKIP/LIMIT
 
         // Recursive function implements the pagination loop
@@ -452,7 +539,7 @@ let processBatchedQuery<'state>
             =
             async {
                 stopwatch.Restart()
-                
+
                 // Shadow the parameter with a mutable local for accumulation within the batch
                 // This avoids threading state through every record processing call
                 let mutable currentHandlerState =
@@ -466,9 +553,13 @@ let processBatchedQuery<'state>
                         match batchCtx.Processor.QueryBuilder, paginationState with
                         | Some builder, _ ->
                             // Use dynamic query builder with version from processor
-                            let q, p = builder batchCtx.Processor.Version paginationState batchSize
-                            Log.debug (sprintf "Executing %s query with %A" 
-                                batchCtx.Processor.EntityName paginationState)
+                            let q, p =
+                                builder batchCtx.Processor.Version paginationState batchSize
+
+                            Log.debug (
+                                sprintf "Executing %s query with %A" batchCtx.Processor.EntityName paginationState
+                            )
+
                             q, p
                         | None, SkipLimit skip ->
                             // Use legacy static query
@@ -478,8 +569,15 @@ let processBatchedQuery<'state>
                                     dict
                                         [ "skip", box skip
                                           "limit", box batchSize ]
-                                Log.debug (sprintf "Executing legacy %s query with skip=%d limit=%d" 
-                                    batchCtx.Processor.EntityName skip batchSize)
+
+                                Log.debug (
+                                    sprintf
+                                        "Executing legacy %s query with skip=%d limit=%d"
+                                        batchCtx.Processor.EntityName
+                                        skip
+                                        batchSize
+                                )
+
                                 q, queryParams
                             | None -> failwith "BatchProcessor must have either Query or QueryBuilder"
                         | None, Keyset _ -> failwith "Cannot use keyset pagination with static query processor"
@@ -525,7 +623,8 @@ let processBatchedQuery<'state>
                                 let dataBytes, newStats =
                                     match batchCtx.Processor.EntityName with
                                     | "Nodes" -> processNodeRecord exportState recordCtx exportCtx record
-                                    | "Relationships" -> processRelationshipRecord exportState recordCtx exportCtx record
+                                    | "Relationships" ->
+                                        processRelationshipRecord exportState recordCtx exportCtx record
                                     | _ -> failwithf "Unsupported entity type: %s" batchCtx.Processor.EntityName
 
                                 // Write to file
@@ -556,16 +655,28 @@ let processBatchedQuery<'state>
                                 hasMore <- false
 
                         batchCtx.FileStream.Flush()
-                        
+
                         // Record batch performance
-                        let batchDurationMs = stopwatch.Elapsed.TotalMilliseconds
+                        let batchDurationMs =
+                            stopwatch.Elapsed.TotalMilliseconds
+
                         perfTracker.RecordBatch(batchDurationMs)
-                        
+
                         // Log performance periodically
-                        if recordCount > 0 && batchStats.RecordsProcessed % 10000L = 0L then
-                            let metrics = perfTracker.GetMetrics(paginationState)
-                            Log.info (sprintf "Batch performance - Strategy: %s, Avg time: %.2fms, Trend: %s" 
-                                metrics.Strategy metrics.AverageBatchTimeMs metrics.PerformanceTrend)
+                        if
+                            recordCount > 0
+                            && batchStats.RecordsProcessed % 10000L = 0L
+                        then
+                            let metrics =
+                                perfTracker.GetMetrics(paginationState)
+
+                            Log.info (
+                                sprintf
+                                    "Batch performance - Strategy: %s, Avg time: %.2fms, Trend: %s"
+                                    metrics.Strategy
+                                    metrics.AverageBatchTimeMs
+                                    metrics.PerformanceTrend
+                            )
 
                         flushErrors batchCtx.ErrorAccumulator exportCtx.Error.Funcs (int64 recordCount)
 
@@ -584,7 +695,7 @@ let processBatchedQuery<'state>
                             // Determine next pagination state
                             let nextPaginationState =
                                 match paginationState with
-                                | SkipLimit skip -> 
+                                | SkipLimit skip ->
                                     let next = SkipLimit(skip + batchSize)
                                     Log.debug (sprintf "Next batch: skip=%d" (skip + batchSize))
                                     next
@@ -605,11 +716,18 @@ let processBatchedQuery<'state>
                                 | Keyset(prevId, _), Keyset(nextId, _) when prevId = nextId ->
                                     // We processed a full batch but couldn't advance the pagination cursor
                                     // This means ID extraction failed for all records in the batch
-                                    return Error(PaginationError(
-                                        batchCtx.Processor.EntityName,
-                                        sprintf "Unable to advance pagination after processing %d records. This typically occurs when the ID field (nodeId/relId) cannot be extracted from query results. Check that your Neo4j query returns the expected fields." recordCount))
+                                    return
+                                        Error(
+                                            PaginationError(
+                                                batchCtx.Processor.EntityName,
+                                                sprintf
+                                                    "Unable to advance pagination after processing %d records. This typically occurs when the ID field (nodeId/relId) cannot be extracted from query results. Check that your Neo4j query returns the expected fields."
+                                                    recordCount
+                                            )
+                                        )
                                 | _ ->
-                                    return! processBatch batchStats newLastProgress nextPaginationState currentHandlerState
+                                    return!
+                                        processBatch batchStats newLastProgress nextPaginationState currentHandlerState
                             else
                                 return Ok(batchStats, currentHandlerState)
             }

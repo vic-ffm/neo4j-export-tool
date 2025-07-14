@@ -53,7 +53,7 @@ let determinePathLevel (nodeCount: int) (config: ExportConfig) : PathSerializati
 
 let writeDepthExceeded (writer: Utf8JsonWriter) (value: obj) (depth: SerializationDepth) =
     writer.WriteStartObject()
-    writer.WriteString("_truncated", "depth_limit")
+    writer.WriteString("_truncated", "depth_limit_exceeded")
     writer.WriteNumber("_depth", SerializationDepth.value depth)
 
     writer.WriteString(

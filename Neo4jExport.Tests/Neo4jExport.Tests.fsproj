@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Neo4jExport.Tests</RootNamespace>
+    <AssemblyName>Neo4jExport.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Neo4jExport/Neo4jExport.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Expecto" Version="10.2.3" />
+    <PackageReference Include="Expecto.FsCheck" Version="10.2.3" />
+    <PackageReference Include="FsCheck" Version="2.16.6" />
+    <PackageReference Include="Unquote" Version="7.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Order matters in F# - files are compiled in the order listed -->
+    <Compile Include="Helpers/Generators.fs" />
+    <Compile Include="Helpers/TestHelpers.fs" />
+    
+    <!-- Unit Tests -->
+    <Compile Include="Unit/Workflow/WorkflowTests.fs" />
+    <Compile Include="Unit/ErrorManagement/NonEmptyListTests.fs" />
+    <Compile Include="Unit/Configuration/FieldValidatorsTests.fs" />
+    <Compile Include="Unit/Json/JsonHelpersTests.fs" />
+    
+    <!-- Serialization Tests -->
+    <Compile Include="Unit/Export/Serialization/PrimitivesTests.fs" />
+    <Compile Include="Unit/Export/Serialization/NumericVariantsTests.fs" />
+    <Compile Include="Unit/Export/Serialization/TemporalTests.fs" />
+    <Compile Include="Unit/Export/Serialization/ClrTypesTests.fs" />
+    <Compile Include="Unit/Export/Serialization/SpatialTests.fs" />
+    <Compile Include="Unit/Export/Serialization/CollectionsTests.fs" />
+    <Compile Include="Unit/Export/Serialization/GraphElementsTests.fs" />
+    <Compile Include="Unit/Export/Serialization/PathTests.fs" />
+    <Compile Include="Unit/Export/Serialization/TruncationTests.fs" />
+    <Compile Include="Unit/Export/Serialization/DepthLimitTests.fs" />
+    <Compile Include="Unit/Export/Serialization/ErrorHandlingTests.fs" />
+    <Compile Include="Unit/Export/Serialization/ConfigurationTests.fs" />
+    
+    <!-- Property Tests -->
+    <Compile Include="Properties/IdGenerationProperties.fs" />
+    <Compile Include="Properties/ErrorDeduplicationProperties.fs" />
+    <Compile Include="Properties/ConfigurationValidationProperties.fs" />
+    <Compile Include="Properties/PaginationProperties.fs" />
+    
+    <!-- Integration Tests -->
+    <Compile Include="Integration/Neo4jAbstractions.fs" />
+    <Compile Include="Integration/TestDoubles.fs" />
+    <Compile Include="Integration/SerializationAdapters.fs" />
+    <Compile Include="Integration/ExportWorkflowTests.fs" />
+    <Compile Include="Integration/BatchProcessingTests.fs" />
+    <Compile Include="Integration/MetadataTests.fs" />
+    <Compile Include="Integration/GraphSerializationTests.fs" />
+    
+    <!-- Entry Point -->
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+</Project>

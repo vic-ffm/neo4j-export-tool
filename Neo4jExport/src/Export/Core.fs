@@ -35,7 +35,7 @@ open Neo4jExport.ExportBatchProcessing
 open ErrorTracking
 
 module QueryBuilders =
-    // Version-specific query builders handle differences between Neo4j 4.x (numeric IDs) 
+    // Version-specific query builders handle differences between Neo4j 4.x (numeric IDs)
     // and 5.x+ (element IDs). This abstraction allows the export logic to remain version-agnostic.
     let buildNodeQuery (version: Neo4jVersion) =
         match version with
@@ -46,10 +46,10 @@ module QueryBuilders =
             "MATCH (n) RETURN n, labels(n) as labels, elementId(n) as elementId ORDER BY elementId(n) SKIP $skip LIMIT $limit"
 
     let buildNodeQueryKeyset (version: Neo4jVersion) (lastId: KeysetId option) =
-        let whereClause = 
+        let whereClause =
             match version, lastId with
-            | V4x, Some (NumericId id) -> sprintf "WHERE id(n) > %d" id
-            | (V5x | V6x), Some (ElementId id) -> sprintf "WHERE elementId(n) > '%s'" id
+            | V4x, Some(NumericId id) -> sprintf "WHERE id(n) > %d" id
+            | (V5x | V6x), Some(ElementId id) -> sprintf "WHERE elementId(n) > '%s'" id
             | _ -> ""
 
         match version with
@@ -57,7 +57,8 @@ module QueryBuilders =
             // For Neo4j 4.x: Return raw node to minimize DB load
             // We return the node object directly and handle temporal conversion in .NET
             // to avoid putting computational load on the production database
-            sprintf """
+            sprintf
+                """
             MATCH (n)
             %s
             RETURN 
@@ -67,13 +68,17 @@ module QueryBuilders =
                 id(n) AS nodeId
             ORDER BY id(n)
             LIMIT $limit
-            """ whereClause
-        | V5x | V6x | Unknown ->
+            """
+                whereClause
+        | V5x
+        | V6x
+        | Unknown ->
             // For Neo4j 5.x+: Also return raw node (same strategy as 4.x)
             // Although 5.x supports type operators like IS ::DATETIME, we chose to
             // use the same approach as 4.x to minimize database CPU usage.
             // Temporal conversion happens in BatchProcessing.fs instead.
-            sprintf """
+            sprintf
+                """
             MATCH (n)
             %s
             RETURN 
@@ -82,7 +87,8 @@ module QueryBuilders =
                 n AS node
             ORDER BY elementId(n)
             LIMIT $limit
-            """ whereClause
+            """
+                whereClause
 
     let buildRelationshipQuery (version: Neo4jVersion) =
         match version with
@@ -93,10 +99,10 @@ module QueryBuilders =
             "MATCH ()-[r]->() RETURN r, type(r) as type, elementId(r) as elementId ORDER BY elementId(r) SKIP $skip LIMIT $limit"
 
     let buildRelationshipQueryKeyset (version: Neo4jVersion) (lastId: KeysetId option) =
-        let whereClause = 
+        let whereClause =
             match version, lastId with
-            | V4x, Some (NumericId id) -> sprintf "WHERE id(r) > %d" id
-            | (V5x | V6x), Some (ElementId id) -> sprintf "WHERE elementId(r) > '%s'" id
+            | V4x, Some(NumericId id) -> sprintf "WHERE id(r) > %d" id
+            | (V5x | V6x), Some(ElementId id) -> sprintf "WHERE elementId(r) > '%s'" id
             | _ -> ""
 
         match version with
@@ -104,7 +110,8 @@ module QueryBuilders =
             // For Neo4j 4.x: Return raw relationship to minimize DB load
             // We return the relationship object directly and handle temporal conversion in .NET
             // to avoid putting computational load on the production database
-            sprintf """
+            sprintf
+                """
             MATCH (startNode)-[r]->(endNode)
             %s
             RETURN 
@@ -116,13 +123,17 @@ module QueryBuilders =
                 id(r) AS relId
             ORDER BY id(r)
             LIMIT $limit
-            """ whereClause
-        | V5x | V6x | Unknown ->
+            """
+                whereClause
+        | V5x
+        | V6x
+        | Unknown ->
             // For Neo4j 5.x+: Also return raw relationship (same strategy as 4.x)
             // Although 5.x supports type operators like IS ::DATETIME, we chose to
             // use the same approach as 4.x to minimize database CPU usage.
             // Temporal conversion happens in BatchProcessing.fs instead.
-            sprintf """
+            sprintf
+                """
             MATCH (startNode)-[r]->(endNode)
             %s
             RETURN 
@@ -133,7 +144,8 @@ module QueryBuilders =
                 r AS relationship
             ORDER BY elementId(r)
             LIMIT $limit
-            """ whereClause
+            """
+                whereClause
 
     let buildQueryParameters (lastId: KeysetId option) (batchSize: int) (skip: int option) =
         match lastId, skip with
@@ -285,7 +297,8 @@ let exportNodesUnified
                     |> LabelStatsTracker.updateLabel "_unlabeled" 1L bytesWritten
                 else
                     // Distribute bytes evenly among labels
-                    let bytesPerLabel = bytesWritten / int64 labels.Length
+                    let bytesPerLabel =
+                        bytesWritten / int64 labels.Length
                     // List.fold threads the tracker through each label update
                     // This is the functional equivalent of a foreach loop with mutable state
                     labels
@@ -311,11 +324,10 @@ let exportNodesUnified
         | Error e -> return Error e
         | Ok(finalStats, finalState) ->
             batchCtx.Buffer.Clear()
-            
+
             // Log ID mapping statistics
-            Log.info (sprintf "Node export complete. Stable ID mappings created: %d" 
-                exportState.NodeIdMapping.Count)
-            
+            Log.info (sprintf "Node export complete. Stable ID mappings created: %d" exportState.NodeIdMapping.Count)
+
             return Ok(finalStats, finalState.LabelTracker, finalState.LineState)
     }
 

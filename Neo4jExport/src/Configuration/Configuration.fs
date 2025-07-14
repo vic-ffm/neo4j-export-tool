@@ -154,6 +154,9 @@ module Configuration =
             let maxLabelsInPathCompactStr =
                 Utils.getEnvVar Env.MAX_LABELS_IN_PATH_COMPACT (string Defaults.MaxLabelsInPathCompact)
 
+            let enableHashedIdsStr =
+                Utils.getEnvVar Env.EnableHashedIds (string Defaults.EnableHashedIds)
+
             // Build validation list where each tuple contains (field_name, validation_result)
             // This pattern allows us to collect all validation errors at once rather than failing on first error
             let validations =
@@ -186,7 +189,8 @@ module Configuration =
                   ("maxLabelsInReferenceMode",
                    validateInt "MAX_LABELS_IN_REFERENCE_MODE" (Some 1) None maxLabelsInReferenceModeStr)
                   ("maxLabelsInPathCompact",
-                   validateInt "MAX_LABELS_IN_PATH_COMPACT" (Some 1) None maxLabelsInPathCompactStr) ]
+                   validateInt "MAX_LABELS_IN_PATH_COMPACT" (Some 1) None maxLabelsInPathCompactStr)
+                  ("enableHashedIds", validateBool "ENABLE_HASHED_IDS" enableHashedIdsStr) ]
 
             match validateAll validations with
             | Error errors ->
@@ -229,7 +233,8 @@ module Configuration =
                       MaxCollectionItems = getInt fields "maxCollectionItems"
                       MaxLabelsPerNode = getInt fields "maxLabelsPerNode"
                       MaxLabelsInReferenceMode = getInt fields "maxLabelsInReferenceMode"
-                      MaxLabelsInPathCompact = getInt fields "maxLabelsInPathCompact" }
+                      MaxLabelsInPathCompact = getInt fields "maxLabelsInPathCompact"
+                      EnableHashedIds = getBool fields "enableHashedIds" }
 
         with ex ->
             Error(ConfigError(sprintf "Invalid configuration: %s" (ErrorAccumulation.exceptionToString ex)))

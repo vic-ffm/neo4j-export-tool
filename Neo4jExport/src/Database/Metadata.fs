@@ -479,11 +479,11 @@ module Metadata =
             )
 
         // Conservative estimates for dynamic content that will be added later
-        let perLabelOverhead = 500    // Space for per-label statistics
-        let generalBuffer = 4096      // General padding for unexpected growth
-        let recordTypesSize = 2000    // Space for record type definitions
-        let compressionSize = 500     // Compression metadata
-        let compatibilitySize = 300   // Compatibility information
+        let perLabelOverhead = 500 // Space for per-label statistics
+        let generalBuffer = 4096 // General padding for unexpected growth
+        let recordTypesSize = 2000 // Space for record type definitions
+        let compressionSize = 500 // Compression metadata
+        let compatibilitySize = 300 // Compatibility information
 
         let estimatedSize =
             currentMetadataBytes.Length
@@ -492,7 +492,7 @@ module Metadata =
             + recordTypesSize
             + compressionSize
             + compatibilitySize
-            + 1024  // Additional safety margin
+            + 1024 // Additional safety margin
 
         // Add 20% margin for safety
         let withMargin =
