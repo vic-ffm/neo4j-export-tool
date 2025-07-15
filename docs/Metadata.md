@@ -400,6 +400,50 @@ When errors or warnings occur during export, they are written as special record 
 }
 ```
 
+## Important: Record Type Field Differences
+
+Different record types have different required and optional fields. When processing JSONL exports, always check the `type` field first before accessing type-specific fields:
+
+### Node Records
+- **Always have**: `type`, `element_id`, `export_id`, `labels`, `properties`
+- **May have**: `NET_node_content_hash` (if content hashing is enabled)
+- **Note**: The `labels` field is an array of strings
+
+### Relationship Records
+- **Always have**: `type`, `element_id`, `export_id`, `label`, `start_element_id`, `end_element_id`, `properties`
+- **May have**: `NET_rel_identity_hash`, `start_node_content_hash`, `end_node_content_hash` (if content hashing is enabled)
+- **Note**: The `label` field is a single string (the relationship type)
+
+### Error and Warning Records
+- **Always have**: `type`, `timestamp`, `message`
+- **May have**: `line`, `element_id`, `details`
+- **Never have**: `labels`, `properties`, `start_element_id`, `end_element_id`
+
+### Processing Example
+
+```javascript
+// Correct: Check type before accessing type-specific fields
+records.forEach(record => {
+  const recordType = record.type;
+  
+  if (recordType === "node") {
+    // Safe to access node-specific fields
+    const labels = record.labels;
+    const properties = record.properties;
+  } else if (recordType === "relationship") {
+    // Safe to access relationship-specific fields
+    const relType = record.label;
+    const startId = record.start_element_id;
+    const endId = record.end_element_id;
+  } else if (recordType === "error" || recordType === "warning") {
+    // Only access error/warning fields
+    const message = record.message;
+    const timestamp = record.timestamp;
+    // DO NOT access labels or properties - they don't exist!
+  }
+});
+```
+
 ## Performance Tracking
 
 The export tool tracks performance metrics for each pagination strategy:

@@ -1,6 +1,7 @@
 module Neo4jExport.Tests.EndToEnd.Infrastructure.ContainerFixtures
 
 open System
+open System.IO
 open Neo4j.Driver
 open Expecto
 open Neo4jExport
@@ -82,43 +83,83 @@ module Fixtures =
         (connectionUri: Uri)
         (user: string)
         (password: string)
-        : Async<Result<ExportMetrics, AppError>> =
+        : Async<Result<ExportMetrics * string, AppError>> = // Return metrics AND file path
         async {
-            // Create test config with container connection details
-            let baseConfig =
-                Neo4jExport.Tests.Helpers.TestHelpers.createTestConfig ()
+            // Create temp output directory
+            let outputDir =
+                Path.Combine(Path.GetTempPath(), $"neo4j-export-test-{Guid.NewGuid()}")
 
-            let config =
-                { baseConfig with
-                    Uri = connectionUri
-                    User = user
-                    Password = password }
+            Directory.CreateDirectory(outputDir) |> ignore
 
-            // Create application context for the export
-            let context =
-                { CancellationTokenSource = new System.Threading.CancellationTokenSource()
-                  TempFiles = System.Collections.Concurrent.ConcurrentBag<string>()
-                  ActiveProcesses = System.Collections.Concurrent.ConcurrentBag<System.Diagnostics.Process>() }
+            try
+                let baseConfig =
+                    Neo4jExport.Tests.Helpers.TestHelpers.createTestConfig ()
 
-            let! (memoryUsed, (duration, result)) =
-                MemoryHelpers.measureMemoryUsage (fun () ->
-                    PerformanceHelpers.measureDuration (fun () -> Workflow.runExport context config))
+                let config =
+                    { baseConfig with
+                        Uri = connectionUri
+                        User = user
+                        Password = password
+                        OutputDirectory = outputDir }
 
-            match result with
-            | Ok() ->
-                // Read export statistics from the output file
-                // For Phase 6, we'll use placeholder metrics
-                // Phase 7 will implement actual metric collection
-                let metrics =
-                    { NodeCount = 0L // TODO: Read from export metadata
-                      RelationshipCount = 0L // TODO: Read from export metadata
-                      Duration = duration
-                      MemoryUsedMB = MemoryHelpers.bytesToMB memoryUsed
-                      ThroughputPerSecond = 0.0 // TODO: Calculate from actual counts
-                    }
+                // Create application context
+                let context =
+                    { CancellationTokenSource = new System.Threading.CancellationTokenSource()
+                      TempFiles = System.Collections.Concurrent.ConcurrentBag<string>()
+                      ActiveProcesses = System.Collections.Concurrent.ConcurrentBag<System.Diagnostics.Process>() }
 
-                return Ok metrics
-            | Error err -> return Error err
+                let! (memoryUsed, (duration, result)) =
+                    MemoryHelpers.measureMemoryUsage (fun () ->
+                        PerformanceHelpers.measureDuration (fun () -> Workflow.runExport context config))
+
+                match result with
+                | Ok() ->
+                    // Find the exported file
+                    let exportedFiles =
+                        Directory.GetFiles(outputDir, "*.jsonl")
+
+                    if Array.isEmpty exportedFiles then
+                        return Error(FileSystemError(outputDir, "No export file found", None))
+                    else
+                        let exportFile = exportedFiles.[0]
+
+                        // Copy to a temp file that won't be deleted
+                        let safeFile =
+                            Path.Combine(Path.GetTempPath(), Path.GetFileName(exportFile))
+
+                        File.Copy(exportFile, safeFile, true)
+
+                        // Read metadata from first line of SAFE FILE (not original!)
+                        let firstLine =
+                            File.ReadLines(safeFile) |> Seq.head
+
+                        use metadataDoc =
+                            System.Text.Json.JsonDocument.Parse(firstLine)
+
+                        let metadata = metadataDoc.RootElement
+
+                        // Extract statistics
+                        let nodeCount =
+                            metadata.GetProperty("database_statistics").GetProperty("nodeCount").GetInt64()
+
+                        let relCount =
+                            metadata.GetProperty("database_statistics").GetProperty("relCount").GetInt64()
+
+                        let totalRecords = nodeCount + relCount
+
+                        let metrics =
+                            { NodeCount = nodeCount
+                              RelationshipCount = relCount
+                              Duration = duration
+                              MemoryUsedMB = MemoryHelpers.bytesToMB memoryUsed
+                              ThroughputPerSecond = PerformanceHelpers.calculateThroughput totalRecords duration }
+
+                        return Ok(metrics, safeFile)
+                | Error err -> return Error err
+            finally
+                // Clean up temp directory
+                if Directory.Exists(outputDir) then
+                    Directory.Delete(outputDir, true)
         }
 
     // Test with specific Neo4j version
@@ -160,7 +201,7 @@ module Fixtures =
                                         Uri(containerInfo.ConnectionString)
 
                                     match! runExportWithMetrics uri "neo4j" containerInfo.Password with
-                                    | Ok metrics ->
+                                    | Ok(metrics, _exportFile) ->
                                         // Validate throughput
                                         if metrics.ThroughputPerSecond < expectedThroughput then
                                             failtest

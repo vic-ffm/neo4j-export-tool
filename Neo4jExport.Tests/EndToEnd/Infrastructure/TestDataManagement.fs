@@ -177,7 +177,7 @@ module TestDataGeneration =
                 let queries =
                     [
                       // 1. Core Primitive Types
-                      """CREATE (n:PrimitiveNode {
+                      """CREATE (n:PrimitiveTypes {
                         nullValue: null,
                         boolTrue: true,
                         boolFalse: false,
@@ -206,7 +206,7 @@ module TestDataGeneration =
                     })"""
 
                       // 3. String edge cases
-                      """CREATE (n:StringNode {
+                      """CREATE (n:UnicodeTest {
                         emptyString: '',
                         singleChar: 'a',
                         unicodeString: '你好世界 🌍 א ב ג',
@@ -223,7 +223,7 @@ module TestDataGeneration =
                     })"""
 
                       // 4. Temporal types with edge cases
-                      """CREATE (n:TemporalNode {
+                      """CREATE (n:TemporalTypes {
                         // Standard temporal values
                         date: date('2024-01-15'),
                         time: time('14:30:45.123456789+02:00'),
@@ -246,7 +246,7 @@ module TestDataGeneration =
                     })"""
 
                       // 5. Spatial types with different SRIDs
-                      """CREATE (n:SpatialNode {
+                      """CREATE (n:SpatialTypes {
                         // WGS84 (SRID 4326) - Geographic
                         wgs84_2d: point({longitude: -73.935242, latitude: 40.730610}),
                         wgs84_3d: point({longitude: -73.935242, latitude: 40.730610, height: 100.0}),
@@ -272,7 +272,7 @@ module TestDataGeneration =
                     })"""
 
                       // 6. Collection types with edge cases
-                      """CREATE (n:CollectionNode {
+                      """CREATE (n:CollectionTypes {
                         // Basic homogeneous collections
                         emptyList: [],
                         singleItemList: [42],

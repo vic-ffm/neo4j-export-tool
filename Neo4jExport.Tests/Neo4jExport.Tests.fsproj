@@ -72,6 +72,13 @@
     <Compile Include="EndToEnd/Infrastructure/ContainerFixtures.fs" />
     <Compile Include="EndToEnd/ExampleContainerTests.fs" />
     
+    <!-- Export E2E Tests -->
+    <Compile Include="EndToEnd/ExportTests/ExportTestUtils.fs" />
+    <Compile Include="EndToEnd/ExportTests/BasicExportTests.fs" />
+    <Compile Include="EndToEnd/ExportTests/DataTypeTests.fs" />
+    <Compile Include="EndToEnd/ExportTests/ErrorHandlingTests.fs" />
+    <Compile Include="EndToEnd/ExportTests/PerformanceBaselineTests.fs" />
+    
     <!-- Entry Point -->
     <Compile Include="Program.fs" />
   </ItemGroup>
