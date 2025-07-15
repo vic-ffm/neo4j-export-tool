@@ -270,6 +270,19 @@ Options for troubleshooting and ensuring data integrity:
   - `true` = Ensures valid JSON but slightly slower
   - `false` = Faster but no validation
 
+## Test Configuration
+
+### `N4JET_TEST_LOG_LEVEL`
+- **Description**: Controls the verbosity of test execution logs
+- **Default**: `Info`
+- **Values**: `Debug`, `Info`, `Warn`, `Error`, `Fatal` (case-insensitive)
+- **Purpose**: Helps debug test failures and monitor test execution progress
+- **Usage**: Set to `Debug` for detailed test execution traces including:
+  - Container operations
+  - Test data seeding progress
+  - Individual test start/end
+  - Performance metrics
+
 ## Security Settings
 
 ### `N4JET_ALLOW_INSECURE`
@@ -451,6 +464,7 @@ For a complete list of all environment variables with their defaults, see the [.
 | | N4JET_QUERY_TIMEOUT_SECONDS | 300 | Integer |
 | **Debug** | N4JET_DEBUG | false | Boolean |
 | | N4JET_VALIDATE_JSON | true | Boolean |
+| **Test** | N4JET_TEST_LOG_LEVEL | Info | String |
 | **Security** | N4JET_ALLOW_INSECURE | false | Boolean |
 
 For advanced settings, refer to the sections above or the .env.example file.

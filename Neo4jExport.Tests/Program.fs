@@ -31,5 +31,19 @@ let main argv =
     // Register custom FsCheck generators
     Helpers.Generators.registerGenerators ()
 
+    // Configure Expecto for better output based on log level
+    let cliArgs =
+        let logLevel =
+            System.Environment.GetEnvironmentVariable(Helpers.TestConstants.Env.TestLogLevel)
+
+        match logLevel with
+        | "Debug"
+        | "debug"
+        | "DEBUG" -> [| "--debug" |]
+        | _ -> [||]
+
+    // Combine with user-provided arguments
+    let allArgs = Array.append cliArgs argv
+
     // Run all tests found in the assembly
-    Tests.runTestsInAssemblyWithCLIArgs [] argv
+    Tests.runTestsInAssemblyWithCLIArgs [] allArgs

@@ -20,10 +20,14 @@
     <PackageReference Include="Expecto.FsCheck" Version="10.2.3" />
     <PackageReference Include="FsCheck" Version="2.16.6" />
     <PackageReference Include="Unquote" Version="7.0.1" />
+    <PackageReference Include="Testcontainers" Version="4.6.0" />
+    <PackageReference Include="Testcontainers.Neo4j" Version="4.6.0" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- Order matters in F# - files are compiled in the order listed -->
+    <Compile Include="Helpers/TestConstants.fs" />
+    <Compile Include="Helpers/TestLog.fs" />
     <Compile Include="Helpers/Generators.fs" />
     <Compile Include="Helpers/TestHelpers.fs" />
     
@@ -61,6 +65,12 @@
     <Compile Include="Integration/BatchProcessingTests.fs" />
     <Compile Include="Integration/MetadataTests.fs" />
     <Compile Include="Integration/GraphSerializationTests.fs" />
+    
+    <!-- End-to-End Tests -->
+    <Compile Include="EndToEnd/Infrastructure/ContainerLifecycle.fs" />
+    <Compile Include="EndToEnd/Infrastructure/TestDataManagement.fs" />
+    <Compile Include="EndToEnd/Infrastructure/ContainerFixtures.fs" />
+    <Compile Include="EndToEnd/ExampleContainerTests.fs" />
     
     <!-- Entry Point -->
     <Compile Include="Program.fs" />

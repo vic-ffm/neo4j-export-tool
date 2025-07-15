@@ -1,0 +1,89 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build and Compile Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build
+      run: dotnet build --no-restore
+
+  test-all:
+    name: All Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    
+    services:
+      docker:
+        image: docker:dind
+        options: --privileged
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build
+      run: dotnet build --no-restore
+    
+    - name: Run all tests including containers
+      run: dotnet test --no-build --verbosity normal
+      env:
+        N4JET_TEST_LOG_LEVEL: Info
+
+  build-release:
+    name: Build Release Binaries
+    runs-on: ubuntu-latest
+    needs: [build]
+    
+    strategy:
+      matrix:
+        runtime: [win-x64, linux-x64, osx-x64, osx-arm64]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+    
+    - name: Publish ${{ matrix.runtime }}
+      run: |
+        dotnet publish Neo4jExport/Neo4jExport.fsproj \
+          -c Release \
+          -r ${{ matrix.runtime }} \
+          --self-contained \
+          -p:PublishSingleFile=true \
+          -p:PublishTrimmed=true \
+          -o ./publish/${{ matrix.runtime }}
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: neo4j-export-${{ matrix.runtime }}
+        path: ./publish/${{ matrix.runtime }}/

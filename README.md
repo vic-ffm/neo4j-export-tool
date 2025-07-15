@@ -149,6 +149,57 @@ make linux-amd64
 ```
 
 
+## Development
+
+### Running Tests
+
+The project includes comprehensive tests covering unit, property-based, integration, and end-to-end scenarios.
+
+#### Quick Development Workflow
+For fast feedback during development:
+```bash
+# Check compilation only
+./scripts/test-quick.sh
+
+# Run specific test categories
+dotnet run --project Neo4jExport.Tests/Neo4jExport.Tests.fsproj -- --filter "Serialization"
+dotnet run --project Neo4jExport.Tests/Neo4jExport.Tests.fsproj -- --filter "Workflow"
+```
+
+#### Comprehensive Test Run (All Tests)
+For complete test coverage including container tests (8-10 minutes):
+```bash
+./scripts/test-all.sh
+```
+
+#### Test Execution Notes
+- **Container tests** take 8-10 minutes due to Docker container startup
+- **Non-container tests** complete in under 1 second
+- Expecto test framework doesn't support easy exclusion of test groups
+- For fastest feedback, run specific test modules during development
+
+#### Custom Test Runs
+```bash
+# Run with debug output
+N4JET_TEST_LOG_LEVEL=Debug ./scripts/test-all.sh
+
+# List all available tests
+dotnet run --project Neo4jExport.Tests/Neo4jExport.Tests.fsproj -- --list-tests
+```
+
+### Building from Source
+
+```bash
+# Build the project
+dotnet build
+
+# Run tests
+dotnet test
+
+# Create release binary
+dotnet publish -c Release -r linux-x64 --self-contained
+```
+
 ## Support
 
 ### 🐛 Found a Bug?
